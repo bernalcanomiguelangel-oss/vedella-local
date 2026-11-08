@@ -60,6 +60,14 @@
       "fairDesc": "Sense intermediaris. Descomptes per volum i lliurament refrigerat."
     }
   },
+  "notify": {
+    "title": "Vols que t'avisem del pròxim cicle?",
+    "subtitle": "Deixa'ns el teu correu i t'escriurem quan s'obri una nova reserva. Sense màrqueting, només l'avís.",
+    "placeholder": "El teu correu electrònic",
+    "button": "Avisa'm",
+    "success": "Perfecte! T'avisarem quan s'obri el pròxim cicle.",
+    "error": "No hem pogut desar el teu correu. Torna-ho a provar."
+  },
   "farm": {
     "backToMarket": "Torna al mercat",
     "foundedIn": "Des de",

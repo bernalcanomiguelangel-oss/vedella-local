@@ -1,19 +1,29 @@
 import Link from "next/link";
 import { FarmCard } from "@/components/FarmCard";
 import { SearchBar } from "@/components/SearchBar";
+import { NotifyMeForm } from "@/components/NotifyMeForm";
 import { listOfferedFarms } from "@/lib/catalog";
 import { getDictionary, resolveLocale } from "@/lib/i18n";
+import { startPageSession, emit } from "@/lib/analytics-session";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage({
   params,
+  searchParams,
 }: {
   params: { locale: string };
+  searchParams?: Record<string, string | string[] | undefined>;
 }) {
   const locale = resolveLocale(params.locale);
   const dict = getDictionary(locale);
   const farms = await listOfferedFarms(locale);
+
+  // Anonymous visitor tracking (decision 4): resolve the session (emitting
+  // session_started + channel attribution on a brand-new session) then record
+  // that the marketplace farm list was viewed. No PII is stored.
+  const session = await startPageSession(searchParams, locale);
+  await emit("farm_list_viewed", { language: locale }, session);
 
   return (
     <main>
@@ -113,6 +123,29 @@ export default async function HomePage({
               }}
             />
           ))}
+        </div>
+      </section>
+
+      {/* Notify-me / interested list (decision 5). Anonymous opt-in email so a
+          visitor can be told when the next cycle opens. No marketing automation;
+          just capture. */}
+      <section className="mx-auto mt-10 max-w-6xl px-6">
+        <div className="rounded-2xl bg-pasture-50 p-6 ring-1 ring-pasture-100">
+          <h2 className="text-xl font-bold text-pasture-900">
+            {dict.notify.title}
+          </h2>
+          <p className="mt-1 text-sm text-pasture-700">{dict.notify.subtitle}</p>
+          <div className="mt-4 max-w-md">
+            <NotifyMeForm
+              locale={locale}
+              strings={{
+                placeholder: dict.notify.placeholder,
+                button: dict.notify.button,
+                success: dict.notify.success,
+                error: dict.notify.error,
+              }}
+            />
+          </div>
         </div>
       </section>
 

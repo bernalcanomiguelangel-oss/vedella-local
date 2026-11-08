@@ -70,6 +70,28 @@ salted hashes and are never logged or returned.
   (`src/lib/admin/users-actions.ts`), and every such action is written to the
   `AdminAudit` log.
 
+## Analytics & charts
+
+Anonymous visitor tracking (no unnecessary PII) feeds the admin **Metrics**
+dashboard. An opaque, cookie-based session id (`vl_anon`, no identifying
+free-text) keys every `AnalyticsEvent`; a `customerId` is attached only when an
+opt-in/signed-in customer is present. `ChannelAttribution` captures first- and
+latest-touch channel (closed set — `unknown` is stored, never guessed), UTM
+params and an optional farm referral code. A notify-me form captures opt-in
+emails into `InterestedContact` (no marketing automation).
+
+Metrics are **two-tier**: a `farm_manager` sees only their own farm's numbers;
+a `platform_admin` sees platform-wide aggregates and can drill into any single
+farm. There are **no margin/cost cards anywhere** (cost is internal). Test
+records are excluded by default; any metric on fewer than 20 qualifying rows is
+flagged "sample too small". Filters are URL-encoded with a reset.
+
+**Charting choice:** charts are **server-rendered SVG** (`BarChart`,
+`chart-series.ts`) with **no charting dependency**. The build is assumed to have
+no reliable network, so a dependency-free, deterministic SVG render keeps the
+dashboard working fully offline. Each chart has an empty state and a
+small-sample caveat.
+
 ## Scripts
 
 | Script             | Description                                      |

@@ -231,6 +231,9 @@ async function main() {
   console.log("Seeding Vedella Local...");
 
   // Clean slate (safe for a dev SQLite DB).
+  await prisma.analyticsEvent.deleteMany();
+  await prisma.channelAttribution.deleteMany();
+  await prisma.interestedContact.deleteMany();
   await prisma.fulfilmentGroup.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
@@ -689,8 +692,169 @@ async function main() {
     console.log("  ✓ Certifications seeded (1 approved public, 1 pending not public).");
   }
 
-  // --- M5: order enrichment backfill (no orders in the seed yet, but run the
-  // gate so the pipeline is proven and future orders are handled). -------------
+  // --- FEAT-005: analytics demo data. Seed anonymous sessions, events, channel
+  // attribution, a handful of confirmed orders (with per-farm FulfilmentGroups
+  // so the two-tier metrics + multi-farm cards have real rows), and a few
+  // notify-me interested contacts. All deterministic; no PII beyond opt-in
+  // emails on InterestedContact and a seeded demo customer. One test session is
+  // flagged isTest to prove exclusion. --------------------------------------
+  const demoCustomer = await prisma.user.findFirst({
+    where: { role: "customer" },
+  });
+  const offersForOrders = await prisma.farmProductOffer.findMany({
+    where: { isApproved: true, isActive: true, isTest: false },
+    include: { farm: true },
+    orderBy: { farmId: "asc" },
+  });
+
+  const CHANNELS_SEED = [
+    "direct",
+    "instagram",
+    "organic_search",
+    "whatsapp",
+    "farm_referral",
+    "email",
+  ];
+  let sessionSeq = 0;
+  function nextSession(isTest = false) {
+    sessionSeq++;
+    return `seed_anon_${isTest ? "test_" : ""}${String(sessionSeq).padStart(4, "0")}`;
+  }
+
+  // 28 anonymous sessions that entered the site and viewed farms; a subset view
+  // items, start a reservation, and complete an order (so conversion/funnel and
+  // repeat-purchase have > 20 qualifying rows where relevant).
+  const sessionCount = 28;
+  let orderSeq = 0;
+  for (let si = 0; si < sessionCount; si++) {
+    const isTestSession = si === 0; // one test session, excluded by default
+    const anon = nextSession(isTestSession);
+    const channel = CHANNELS_SEED[si % CHANNELS_SEED.length];
+    const language = ["ca", "es", "en"][si % 3];
+    const farm = allFarms[si % allFarms.length];
+
+    await prisma.channelAttribution.create({
+      data: {
+        anonSessionId: anon,
+        firstTouchChannel: channel,
+        latestTouchChannel: channel,
+        isTest: isTestSession,
+      },
+    });
+    await prisma.analyticsEvent.createMany({
+      data: [
+        { type: "session_started", anonSessionId: anon, channel, language, isTest: isTestSession },
+        { type: "farm_list_viewed", anonSessionId: anon, language, isTest: isTestSession },
+        { type: "farm_viewed", anonSessionId: anon, farmId: farm.id, language, isTest: isTestSession },
+      ],
+    });
+
+    // ~60% view/select an item (upsell observable via offer_selected).
+    if (si % 5 !== 0) {
+      const offer = offersForOrders.find((o) => o.farmId === farm.id) ?? offersForOrders[0];
+      if (offer) {
+        await prisma.analyticsEvent.createMany({
+          data: [
+            { type: "farm_offer_viewed", anonSessionId: anon, farmId: farm.id, offerId: offer.id, language, isTest: isTestSession },
+            { type: "offer_selected", anonSessionId: anon, farmId: farm.id, offerId: offer.id, language, isTest: isTestSession },
+            { type: "delivery_mode_selected", anonSessionId: anon, deliveryMethod: si % 2 === 0 ? "delivery" : "pickup", language, isTest: isTestSession },
+          ],
+        });
+      }
+    }
+
+    // ~40% start a reservation; most of those complete into an order.
+    if (si % 5 < 2) {
+      await prisma.analyticsEvent.create({
+        data: { type: "reservation_started", anonSessionId: anon, language, isTest: isTestSession },
+      });
+      if (!isTestSession && offersForOrders.length > 0) {
+        orderSeq++;
+        const offer = offersForOrders.find((o) => o.farmId === farm.id) ?? offersForOrders[0];
+        const qty = 1 + (orderSeq % 3);
+        const subtotal = offer.priceAmountCents * qty;
+        const total = subtotal + 600;
+        // A couple of customers order twice (repeat purchase).
+        const customerId = demoCustomer && orderSeq % 4 === 0 ? demoCustomer.id : null;
+        const order = await prisma.order.create({
+          data: {
+            cycleId: cycle.id,
+            customerId,
+            status: "confirmed",
+            lotReferenceSnapshot: "",
+            subtotalCents: subtotal,
+            discountCents: 0,
+            deliveryFeeCents: 600,
+            totalCents: total,
+            isTest: false,
+            attributionChannel: channel,
+            deliveryMethod: si % 2 === 0 ? "delivery" : "pickup",
+            items: {
+              create: [
+                {
+                  farmProductOfferId: offer.id,
+                  farmId: offer.farmId,
+                  nameSnapshot: offer.publicName,
+                  priceCentsSnapshot: offer.priceAmountCents,
+                  quantity: qty,
+                },
+              ],
+            },
+            fulfilmentGroups: {
+              create: [
+                { farmId: offer.farmId, status: "preparing", subtotalCents: subtotal },
+              ],
+            },
+          },
+        });
+        await prisma.analyticsEvent.create({
+          data: {
+            type: "reservation_completed",
+            anonSessionId: anon,
+            farmId: offer.farmId,
+            offerId: offer.id,
+            language,
+            isTest: false,
+          },
+        });
+        await prisma.channelAttribution.update({
+          where: { anonSessionId: anon },
+          data: { orderId: order.id },
+        });
+      } else if (isTestSession) {
+        await prisma.analyticsEvent.create({
+          data: { type: "reservation_completed", anonSessionId: anon, language, isTest: true },
+        });
+      }
+    }
+
+    // A handful leave a notify-me email (decision 5), some farm-attributed.
+    if (si % 6 === 0) {
+      await prisma.analyticsEvent.create({
+        data: {
+          type: "next_cycle_interest_submitted",
+          anonSessionId: anon,
+          farmId: si % 12 === 0 ? farm.id : null,
+          language,
+          isTest: isTestSession,
+        },
+      });
+      await prisma.interestedContact.create({
+        data: {
+          email: `interessat${si}@exemple.cat`,
+          locale: language,
+          anonSessionId: anon,
+          farmId: si % 12 === 0 ? farm.id : null,
+          isTest: isTestSession,
+        },
+      });
+    }
+  }
+  console.log(
+    `  ✓ Analytics demo: ${sessionCount} sessions, ${orderSeq} confirmed orders, events + attribution + interested contacts seeded.`,
+  );
+
+  // --- M5: order enrichment backfill (now with seeded orders). ----------------
   const totalsBefore = new Map(
     (await prisma.order.findMany({ select: { id: true, totalCents: true } })).map(
       (o) => [o.id, o.totalCents],

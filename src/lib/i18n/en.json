@@ -60,6 +60,14 @@
       "fairDesc": "No middlemen. Volume discounts and refrigerated delivery."
     }
   },
+  "notify": {
+    "title": "Want us to let you know about the next cycle?",
+    "subtitle": "Leave your email and we'll write when a new reservation opens. No marketing, just the heads-up.",
+    "placeholder": "Your email address",
+    "button": "Notify me",
+    "success": "Great! We'll let you know when the next cycle opens.",
+    "error": "We couldn't save your email. Please try again."
+  },
   "farm": {
     "backToMarket": "Back to the market",
     "foundedIn": "Since",

@@ -60,6 +60,14 @@
       "fairDesc": "Sin intermediarios. Descuentos por volumen y entrega refrigerada."
     }
   },
+  "notify": {
+    "title": "¿Quieres que te avisemos del próximo ciclo?",
+    "subtitle": "Déjanos tu correo y te escribiremos cuando se abra una nueva reserva. Sin marketing, solo el aviso.",
+    "placeholder": "Tu correo electrónico",
+    "button": "Avísame",
+    "success": "¡Perfecto! Te avisaremos cuando se abra el próximo ciclo.",
+    "error": "No hemos podido guardar tu correo. Inténtalo de nuevo."
+  },
   "farm": {
     "backToMarket": "Volver al mercado",
     "foundedIn": "Desde",

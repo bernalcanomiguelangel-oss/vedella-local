@@ -606,6 +606,80 @@ model AdminAudit {
   @@index([actorId])
 }
 
+// ---------------------------------------------------------------------------
+// Analytics (FEAT-005, decisions 4/5). Anonymous visitor tracking + channel
+// attribution + a notify-me interest list.
+//
+// Privacy: events are keyed by an anonymous, cookie-based session id that
+// carries NO PII. A customerId is stored ONLY when a signed-in/opt-in customer
+// is present; no free-text that could identify a person is ever recorded on an
+// event. Test traffic is marked isTest and excluded from production metrics by
+// default (R15 / analytics-dictionary §1).
+// ---------------------------------------------------------------------------
+model AnalyticsEvent {
+  id            String   @id @default(cuid())
+  // One of the documented event types (analytics-dictionary §2). Stored as a
+  // string; the allowed set is enforced in src/lib/analytics.ts.
+  type          String
+  anonSessionId String
+  customerId    String? // only when a consenting/opt-in customer is present
+  farmId        String?
+  definitionId  String?
+  offerId       String?
+  packId        String?
+  cycleId       String?
+  language      String?
+  deliveryMethod String? // delivery | pickup
+  // Closed channel set (analytics-dictionary §5); 'unknown' when undetermined.
+  channel       String?
+  campaign      String?
+  isTest        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([type])
+  @@index([anonSessionId])
+  @@index([farmId])
+  @@index([createdAt])
+}
+
+// First- and latest-touch channel attribution for an anonymous session, plus
+// optional UTM parameters and a farm referral code. Links to the resulting
+// order when one is created. Channel is from the closed set; 'unknown' when it
+// cannot be determined (never guessed).
+model ChannelAttribution {
+  id                String   @id @default(cuid())
+  anonSessionId     String   @unique
+  firstTouchChannel String   @default("unknown")
+  latestTouchChannel String  @default("unknown")
+  utmSource         String?
+  utmMedium         String?
+  utmCampaign       String?
+  farmReferralCode  String?
+  orderId           String?
+  isTest            Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([anonSessionId])
+}
+
+// "Notify me next cycle" interest list. Captures an opt-in email only; no
+// marketing automation is performed. anonSessionId links it to the session that
+// submitted it (so a farm-attributed interest can be surfaced). farmId is set
+// when the interest is attributable to a specific farm, else null (platform).
+model InterestedContact {
+  id            String   @id @default(cuid())
+  email         String
+  locale        String?
+  anonSessionId String?
+  farmId        String?
+  isTest        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([farmId])
+  @@index([createdAt])
+}
+
 model MarketPriceSnapshot {
   id            String   @id @default(cuid())
   cutName       String

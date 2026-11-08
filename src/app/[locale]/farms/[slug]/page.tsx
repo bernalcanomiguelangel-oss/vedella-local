@@ -3,13 +3,16 @@ import { notFound } from "next/navigation";
 import { CutCard, PackCard } from "@/components/ProductCard";
 import { getFarmCatalog } from "@/lib/catalog";
 import { getDictionary, resolveLocale } from "@/lib/i18n";
+import { startPageSession, emit } from "@/lib/analytics-session";
 
 export const dynamic = "force-dynamic";
 
 export default async function FarmPage({
   params,
+  searchParams,
 }: {
   params: { locale: string; slug: string };
+  searchParams?: Record<string, string | string[] | undefined>;
 }) {
   const locale = resolveLocale(params.locale);
   const dict = getDictionary(locale);
@@ -19,6 +22,12 @@ export default async function FarmPage({
   if (!farm) {
     notFound();
   }
+
+  // Anonymous visitor tracking (decision 4): record that this specific farm was
+  // viewed. A farm referral code on the URL (?ref=) attributes the session to
+  // this farm. No PII is stored.
+  const session = await startPageSession(searchParams, locale);
+  await emit("farm_viewed", { farmId: farm.id, language: locale }, session);
 
   const productStrings = {
     weight: dict.product.weight,
