@@ -7,6 +7,25 @@
     "basket": "Cistella",
     "search": "Cerca"
   },
+  "admin": {
+    "title": "Administració",
+    "nav": {
+      "overview": "Resum",
+      "metrics": "Mètriques",
+      "farms": "Granges",
+      "products": "Productes i packs",
+      "lots": "Lots",
+      "cycles": "Cicles",
+      "orders": "Comandes",
+      "incidents": "Incidències",
+      "websiteText": "Textos web",
+      "users": "Usuaris i permisos",
+      "review": "Revisió",
+      "audit": "Registre d'activitat",
+      "settings": "Ajustos",
+      "logout": "Tanca la sessió"
+    }
+  },
   "hero": {
     "eyebrow": "Mercat de proximitat",
     "title": "Vedella local i traçable de Catalunya",

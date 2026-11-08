@@ -7,6 +7,25 @@
     "basket": "Cesta",
     "search": "Buscar"
   },
+  "admin": {
+    "title": "Administración",
+    "nav": {
+      "overview": "Resumen",
+      "metrics": "Métricas",
+      "farms": "Granjas",
+      "products": "Productos y packs",
+      "lots": "Lotes",
+      "cycles": "Ciclos",
+      "orders": "Pedidos",
+      "incidents": "Incidencias",
+      "websiteText": "Textos web",
+      "users": "Usuarios y permisos",
+      "review": "Revisión",
+      "audit": "Registro de actividad",
+      "settings": "Ajustes",
+      "logout": "Cerrar sesión"
+    }
+  },
   "hero": {
     "eyebrow": "Mercado de proximidad",
     "title": "Ternera local y trazable de Cataluña",

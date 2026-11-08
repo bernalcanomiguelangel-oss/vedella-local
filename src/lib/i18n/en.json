@@ -7,6 +7,25 @@
     "basket": "Basket",
     "search": "Search"
   },
+  "admin": {
+    "title": "Administration",
+    "nav": {
+      "overview": "Overview",
+      "metrics": "Metrics",
+      "farms": "Farms",
+      "products": "Products & packs",
+      "lots": "Lots",
+      "cycles": "Cycles",
+      "orders": "Orders",
+      "incidents": "Incidents",
+      "websiteText": "Website text",
+      "users": "Users & permissions",
+      "review": "Review",
+      "audit": "Audit log",
+      "settings": "Settings",
+      "logout": "Log out"
+    }
+  },
   "hero": {
     "eyebrow": "Local producers' market",
     "title": "Local, traceable Catalan beef",

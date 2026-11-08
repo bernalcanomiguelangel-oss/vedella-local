@@ -4,8 +4,24 @@
 
 :root {
   --font-sans: ui-sans-serif, system-ui, sans-serif;
+  /* Serif display face for headings (admin shell §1). Falls back cleanly when
+   * no custom font is loaded, so the app still runs fully offline. */
+  --font-display: Georgia, "Times New Roman", ui-serif, serif;
 }
 
 body {
   @apply bg-cream-50 text-pasture-900;
+}
+
+/* Admin shell: warm cream/brown/gold/green palette with serif display
+ * headings and a humanist sans body. Scoped to [data-admin-shell] so the
+ * public marketplace keeps its existing pasture/beef styling untouched. */
+[data-admin-shell] {
+  @apply bg-cream-100 text-bark-900;
+}
+
+[data-admin-shell] h1,
+[data-admin-shell] h2,
+[data-admin-shell] h3 {
+  @apply font-display;
 }
