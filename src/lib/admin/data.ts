@@ -65,6 +65,63 @@ function productScopeWhere(user: SessionUser) {
   return { farmId: { in: scope } };
 }
 
+/**
+ * Build a Prisma `where` that respects the user's farm scope for
+ * FarmProductOffer / Lot (both carry a `farmId`). A FarmProductOffer belongs to
+ * exactly one farm, so a farm_manager only ever reads/writes their own offers.
+ * `null` scope (platform_admin) returns an unfiltered `where`.
+ */
+export function offerScopeWhere(user: SessionUser) {
+  const scope = visibleFarmScope(user);
+  if (scope === null) return {};
+  if (scope.length === 0) return { farmId: "__none__" };
+  return { farmId: { in: scope } };
+}
+
+export interface AdminOfferRow {
+  id: string;
+  publicName: string;
+  definitionName: string;
+  priceLabel: string;
+  priceUnit: string;
+  lifecycle: string;
+  isApproved: boolean;
+  isActive: boolean;
+  isTest: boolean;
+  needsReview: boolean;
+  farmId: string;
+  farmName: string;
+}
+
+/**
+ * Farm product offers visible to this user. A farm_manager sees ONLY their own
+ * farm's offers; a platform_admin sees every farm's. This is the offer-aware
+ * counterpart to listAdminProducts for the two-level product model.
+ */
+export async function listAdminOffers(
+  user: SessionUser,
+): Promise<AdminOfferRow[]> {
+  const offers = await prisma.farmProductOffer.findMany({
+    where: offerScopeWhere(user),
+    include: { farm: true, productDefinition: true },
+    orderBy: [{ farmId: "asc" }, { publicName: "asc" }],
+  });
+  return offers.map((o) => ({
+    id: o.id,
+    publicName: o.publicName,
+    definitionName: o.productDefinition.canonicalName,
+    priceLabel: formatCents(o.priceAmountCents),
+    priceUnit: o.priceUnit,
+    lifecycle: o.lifecycle,
+    isApproved: o.isApproved,
+    isActive: o.isActive,
+    isTest: o.isTest,
+    needsReview: o.lifecycle === "pending_review",
+    farmId: o.farmId,
+    farmName: o.farm.name,
+  }));
+}
+
 export async function listAdminFarms(user: SessionUser): Promise<AdminFarmRow[]> {
   const farms = await prisma.farm.findMany({
     where: farmScopeWhere(user),

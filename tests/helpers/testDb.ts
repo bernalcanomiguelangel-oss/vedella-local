@@ -79,7 +79,13 @@ export async function createTestDb(): Promise<TestDb> {
     release();
   }
 
-  const prisma = new PrismaClient({ datasources: { db: { url } } });
+  // connection_limit=1 forces a single SQLite connection so the per-connection
+  // `PRAGMA foreign_keys=ON` set below persists for every query (a fresh
+  // connection would default FK enforcement OFF, which under parallel load made
+  // composite-FK rejection tests intermittently fail).
+  const prisma = new PrismaClient({
+    datasources: { db: { url: `${url}?connection_limit=1` } },
+  });
 
   // Reproduce the integrity CHECK constraints that live in the init migration
   // (prisma db push creates tables without them). We rebuild the Lot and
@@ -106,13 +112,21 @@ async function addCheckConstraints(prisma: PrismaClient): Promise<void> {
     `CREATE UNIQUE INDEX IF NOT EXISTS "Product_id_farmId_key" ON "Product"("id", "farmId");`,
   );
 
-  // Lot: units >= 0, date ordering, and the composite FK enforcing R9
-  // (lot.farmId must equal the owning product's farmId).
+  // FarmProductOffer candidate key so Lot's new composite FK can target it. db
+  // push creates @@unique([id, farmId]) from the schema, so this is defensive.
+  await prisma.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "FarmProductOffer_id_farmId_key" ON "FarmProductOffer"("id", "farmId");`,
+  );
+
+  // Lot: units >= 0, date ordering, and BOTH composite FKs enforcing R9
+  // (lot.farmId must equal the owning product's AND offer's farmId). productId
+  // and farmProductOfferId are both nullable this release (two-level model M4).
   await prisma.$executeRawUnsafe(`
     CREATE TABLE "Lot_new" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "farmId" TEXT NOT NULL,
-      "productId" TEXT NOT NULL,
+      "productId" TEXT,
+      "farmProductOfferId" TEXT,
       "reference" TEXT NOT NULL,
       "units" INTEGER NOT NULL DEFAULT 0,
       "isWithdrawn" BOOLEAN NOT NULL DEFAULT false,
@@ -125,6 +139,7 @@ async function addCheckConstraints(prisma: PrismaClient): Promise<void> {
       "updatedAt" DATETIME NOT NULL,
       CONSTRAINT "Lot_farmId_fkey" FOREIGN KEY ("farmId") REFERENCES "Farm" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
       CONSTRAINT "Lot_productId_farmId_fkey" FOREIGN KEY ("productId", "farmId") REFERENCES "Product" ("id", "farmId") ON DELETE RESTRICT ON UPDATE CASCADE,
+      CONSTRAINT "Lot_farmProductOfferId_farmId_fkey" FOREIGN KEY ("farmProductOfferId", "farmId") REFERENCES "FarmProductOffer" ("id", "farmId") ON DELETE RESTRICT ON UPDATE CASCADE,
       CONSTRAINT "Lot_units_nonneg" CHECK ("units" >= 0),
       CONSTRAINT "Lot_date_order" CHECK (
         "slaughterDate" <= "cuttingDate"
@@ -141,6 +156,9 @@ async function addCheckConstraints(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRawUnsafe(`CREATE INDEX "Lot_farmId_idx" ON "Lot"("farmId");`);
   await prisma.$executeRawUnsafe(
     `CREATE INDEX "Lot_productId_idx" ON "Lot"("productId");`,
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX "Lot_farmProductOfferId_idx" ON "Lot"("farmProductOfferId");`,
   );
 
   // ReservationCycle: freePlaces >= 0 and freePlaces <= totalPlaces (no oversell).

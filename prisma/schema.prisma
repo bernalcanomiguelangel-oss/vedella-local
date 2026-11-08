@@ -70,6 +70,7 @@ model Farm {
   manager   User?  @relation("FarmManager")
 
   products Product[]
+  offers   FarmProductOffer[]
   lots     Lot[]
 
   createdAt DateTime @default(now())
@@ -112,6 +113,83 @@ model Product {
   @@unique([id, farmId])
 }
 
+// ---------------------------------------------------------------------------
+// Two-level product model (FEAT-003, migration M1-M4).
+//
+// ProductDefinition is the platform-curated, reusable canonical cut ("Entrecot").
+// It is NOT directly sellable. FarmProductOffer is the farm-specific, sellable
+// listing of a definition, carrying that farm's own price/weight/etc. This
+// separates the reusable definition from the per-farm offer that the legacy
+// Product table conflated. Both are additive this phase; the public catalog
+// keeps rendering from the legacy Product path until a later feature.
+// ---------------------------------------------------------------------------
+
+model ProductDefinition {
+  id             String  @id @default(cuid())
+  canonicalName  String // e.g. "Entrecot"
+  category       String // cut category / family; "needs-review" when unknown
+  description    String  @default("")
+  defaultPrep    String  @default("")
+  translationKey String  @unique // for ca/es/en copy
+  lifecycle      String  @default("draft") // Lifecycle enum; human-managed, AI never approves
+  isApproved     Boolean @default(false)
+  isActive       Boolean @default(false)
+  isTest         Boolean @default(false)
+
+  offers FarmProductOffer[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([canonicalName])
+}
+
+model FarmProductOffer {
+  id                  String            @id @default(cuid())
+  farm                Farm              @relation(fields: [farmId], references: [id])
+  farmId              String
+  productDefinition   ProductDefinition @relation(fields: [productDefinitionId], references: [id])
+  productDefinitionId String
+  publicName          String
+  internalSku         String?
+  description         String            @default("")
+  priceAmountCents    Int // integer cents (existing convention)
+  priceUnit           String // per_unit | per_kg | per_pack ...
+  currency            String            @default("EUR")
+
+  // Structured facts parsed best-effort from the legacy free-text columns.
+  expectedUnitWeightMinG Int?
+  expectedUnitWeightMaxG Int?
+  weightTolerancePercent Int?
+  unitsPerPack           Int?
+  thicknessMm            Int?
+  maturationDays         Int?
+  packagingMethod        String?
+  storageState           String? // chilled | frozen ...
+  minimumShelfLifeDays   Int?
+  pickupAvailable        Boolean @default(false)
+
+  // Original free-text preserved so a failed parse never loses data.
+  legacyFacts String?
+
+  lifecycle  String    @default("draft") // Lifecycle enum, see header
+  isApproved Boolean   @default(false)
+  isActive   Boolean   @default(false)
+  archivedAt DateTime?
+  isTest     Boolean   @default(false)
+
+  lots Lot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Candidate key for the Lot composite FK (mirrors Product(id, farmId) today),
+  // enforcing lot.farmId == offer.farmId at the DB level.
+  @@unique([id, farmId])
+  @@index([farmId])
+  @@index([productDefinitionId])
+}
+
 model PackItem {
   id           String  @id @default(cuid())
   pack         Product @relation("PackToItems", fields: [packProductId], references: [id])
@@ -128,13 +206,16 @@ model Lot {
   id         String   @id @default(cuid())
   farm       Farm     @relation(fields: [farmId], references: [id])
   farmId     String
-  // Composite FK into Product(id, farmId): this is the DB-level backstop for R9
-  // (lot.farmId must equal the owning product's farmId). Because the FK targets
-  // the (id, farmId) candidate key, a lot whose farmId differs from its
-  // product's farmId has no matching Product row and the insert is rejected by
-  // the database — not just by the validateLot() guard.
-  product    Product  @relation(fields: [productId, farmId], references: [id, farmId])
-  productId  String
+  // LEGACY composite FK into Product(id, farmId). Kept nullable for one release
+  // (M4) so historical data and the old read path survive while the new offer
+  // path is backfilled. Do NOT drop yet.
+  product    Product? @relation(fields: [productId, farmId], references: [id, farmId])
+  productId  String?
+  // NEW composite FK into FarmProductOffer(id, farmId): the DB-level backstop
+  // for R9 under the two-level model (lot.farmId must equal its offer's farmId).
+  // Nullable this phase; flipped non-null for cut-backed lots in a later feature.
+  offer             FarmProductOffer? @relation(fields: [farmProductOfferId, farmId], references: [id, farmId])
+  farmProductOfferId String?
   reference  String   @unique // R11 unique lot reference
   units      Int      @default(0) // R12 non-negative (enforced by CHECK + guard)
   isWithdrawn Boolean @default(false) // R13
@@ -151,6 +232,7 @@ model Lot {
 
   @@index([farmId])
   @@index([productId])
+  @@index([farmProductOfferId])
 }
 
 model ReservationCycle {

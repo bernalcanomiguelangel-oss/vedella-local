@@ -11,6 +11,7 @@
 import { PrismaClient } from "@prisma/client";
 import { validateLot } from "../src/lib/validateLot";
 import { hashPassword } from "../src/lib/password";
+import { backfillOffers, verifyBackfill } from "../src/lib/migrate/backfill-offers";
 
 const prisma = new PrismaClient();
 
@@ -229,6 +230,8 @@ async function main() {
   await prisma.order.deleteMany();
   await prisma.packItem.deleteMany();
   await prisma.lot.deleteMany();
+  await prisma.farmProductOffer.deleteMany();
+  await prisma.productDefinition.deleteMany();
   await prisma.product.deleteMany();
   await prisma.reservationCycle.deleteMany();
   await prisma.translation.deleteMany();
@@ -315,7 +318,11 @@ async function main() {
       data: { farmId: farm.id },
     });
 
-    // Create cuts first (packs reference them via PackItem).
+    // Create cuts first (packs reference them via PackItem). Each farm prices
+    // its own cuts independently: the second farm applies a small per-farm
+    // delta so that, after the M3 backfill, Farm A and Farm B carry DISTINCT
+    // FarmProductOffer prices for the SAME shared ProductDefinition (R-PM3).
+    const farmPriceDelta = fi * 60; // cents; farm 0 = +0, farm 1 = +60
     const cutByKey: Record<string, string> = {};
     for (const c of CUTS) {
       const product = await prisma.product.create({
@@ -324,7 +331,7 @@ async function main() {
           kind: "cut",
           name: c.name,
           description: c.description,
-          basePriceCents: c.priceCents,
+          basePriceCents: c.priceCents + farmPriceDelta,
           weight: c.weight,
           thickness: c.thickness,
           maturation: c.maturation,
@@ -564,6 +571,19 @@ async function main() {
   });
 
   console.log("  ✓ Active cycle: Cicle novembre 2026 (37/50 places free).");
+
+  // Two-level product model backfill (migration M2-M4). Runs AFTER the legacy
+  // Product/Lot rows exist so definitions+offers live alongside them (legacy
+  // rows are NOT deleted). The verify step asserts the M3/M4 gates pass.
+  const backfill = await backfillOffers(prisma);
+  const verified = await verifyBackfill(prisma);
+  console.log(
+    `  ✓ Product model backfill: ${backfill.definitionsCreated} definitions, ${backfill.offersCreated} offers, ${backfill.lotsRepointed} lots re-pointed (${backfill.needsReviewOffers} needs-review).`,
+  );
+  console.log(
+    `  ✓ Backfill gates OK: offers (${verified.offers}) == cut products (${verified.cutProducts}); ${verified.repointedLots}/${verified.cutLots} cut-lots carry an offer with matching farmId.`,
+  );
+
   console.log(
     `  ✓ Main admin ${MAIN_ADMIN_EMAIL} created with a TEMPORARY password (must change on first login).`,
   );
