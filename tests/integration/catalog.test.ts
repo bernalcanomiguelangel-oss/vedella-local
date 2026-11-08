@@ -191,4 +191,41 @@ describe("locale-aware content resolution", () => {
     expect(es.find((f) => f.slug === "open-farm")?.name).toBe("Open Farm");
     expect(ca.find((f) => f.slug === "open-farm")?.name).toBe("Open Farm");
   });
+
+  it("getFarmCatalog resolves the farm header through approved translations (R20)", async () => {
+    const open = await prisma.farm.findFirstOrThrow({
+      where: { slug: "open-farm" },
+    });
+    // An approved EN story for the farm; it must surface on the farm PAGE
+    // header, not only on the homepage card.
+    await prisma.translation.upsert({
+      where: {
+        entityType_entityId_field_locale: {
+          entityType: "farm",
+          entityId: open.id,
+          field: "story",
+          locale: "en",
+        },
+      },
+      create: {
+        entityType: "farm",
+        entityId: open.id,
+        field: "story",
+        locale: "en",
+        text: "Open Farm story (EN approved)",
+        status: "approved",
+      },
+      update: { text: "Open Farm story (EN approved)", status: "approved" },
+    });
+
+    const enCat = await getFarmCatalog("open-farm", "en");
+    const caCat = await getFarmCatalog("open-farm", "ca");
+    // The farm header NAME uses the approved EN translation seeded above.
+    expect(enCat?.name).toBe("Open Farm (EN approved)");
+    // The farm header STORY uses the approved EN translation.
+    expect(enCat?.story).toBe("Open Farm story (EN approved)");
+    // ca falls back to base columns.
+    expect(caCat?.name).toBe("Open Farm");
+    expect(caCat?.story).toBe("A test farm.");
+  });
 });

@@ -100,7 +100,14 @@ async function addCheckConstraints(prisma: PrismaClient): Promise<void> {
   // Tables are empty at this point (freshly pushed), so copying is trivial.
   await prisma.$executeRawUnsafe("PRAGMA foreign_keys=OFF;");
 
-  // Lot: units >= 0 and date ordering.
+  // R9 backstop: Product needs a (id, farmId) candidate key so Lot's composite
+  // FK can target it (prisma db push does not add this index).
+  await prisma.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "Product_id_farmId_key" ON "Product"("id", "farmId");`,
+  );
+
+  // Lot: units >= 0, date ordering, and the composite FK enforcing R9
+  // (lot.farmId must equal the owning product's farmId).
   await prisma.$executeRawUnsafe(`
     CREATE TABLE "Lot_new" (
       "id" TEXT NOT NULL PRIMARY KEY,
@@ -117,7 +124,7 @@ async function addCheckConstraints(prisma: PrismaClient): Promise<void> {
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL,
       CONSTRAINT "Lot_farmId_fkey" FOREIGN KEY ("farmId") REFERENCES "Farm" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-      CONSTRAINT "Lot_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      CONSTRAINT "Lot_productId_farmId_fkey" FOREIGN KEY ("productId", "farmId") REFERENCES "Product" ("id", "farmId") ON DELETE RESTRICT ON UPDATE CASCADE,
       CONSTRAINT "Lot_units_nonneg" CHECK ("units" >= 0),
       CONSTRAINT "Lot_date_order" CHECK (
         "slaughterDate" <= "cuttingDate"

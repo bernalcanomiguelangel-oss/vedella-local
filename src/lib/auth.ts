@@ -69,6 +69,21 @@ export function isAdminRole(role: Role): boolean {
 }
 
 /**
+ * API-route authorisation (no redirect). Resolves the current user from the
+ * session cookie and returns it only when it holds an admin role
+ * (platform_admin or farm_manager). Returns null otherwise so the caller can
+ * respond 401/403. Route handlers cannot use `requireAdmin` because that calls
+ * `redirect()` (a pages/server-action primitive); this is the HTTP-edge gate
+ * that mirrors the same server-side role check.
+ */
+export async function getApiAdmin(): Promise<SessionUser | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+  if (!isAdminRole(user.role)) return null;
+  return user;
+}
+
+/**
  * Require ANY admin role (platform_admin or farm_manager). Redirects an
  * unauthenticated visitor to the login page and a customer to the access-denied
  * page. Returns the authenticated admin user on success.

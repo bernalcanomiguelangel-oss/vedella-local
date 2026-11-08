@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { computeWeeklyAverages, runWeeklyMetrics } from "@/lib/ai/metrics";
 import { isoWeekStartKey } from "@/lib/ai/isoWeek";
+import { getApiAdmin } from "@/lib/auth";
 
 const WeekSchema = z.object({
   // Optional ISO date to pick a specific week; defaults to "now".
@@ -27,6 +28,12 @@ function parseWeek(value: string | undefined | null): Date {
 }
 
 export async function GET(request: Request) {
+  // Metrics are an internal admin surface (R21); gate the HTTP edge.
+  const admin = await getApiAdmin();
+  if (!admin) {
+    return NextResponse.json({ ok: false, code: "UNAUTHORIZED" }, { status: 401 });
+  }
+
   const url = new URL(request.url);
   const parsed = WeekSchema.safeParse({
     week: url.searchParams.get("week") ?? undefined,
@@ -44,6 +51,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Running the weekly job writes snapshots; admin only (R21).
+  const admin = await getApiAdmin();
+  if (!admin) {
+    return NextResponse.json({ ok: false, code: "UNAUTHORIZED" }, { status: 401 });
+  }
+
   let json: unknown = {};
   try {
     json = await request.json();

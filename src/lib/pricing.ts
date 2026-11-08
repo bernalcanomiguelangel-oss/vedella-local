@@ -5,8 +5,11 @@
  * All monetary values are integer cents.
  *
  * Business rules (product steering):
- *  - Quantity discount tiers by total UNIT count (each pack counts as one unit,
- *    each individual cut line counts by its quantity):
+ *  - Quantity discount tiers by total UNIT count. A "unit" is one line-quantity:
+ *    each pack counts as one unit per quantity (the pack is the unit; its
+ *    included cuts are NOT re-counted), and each individual cut counts by its
+ *    quantity too. So 1 pack + 2 cuts = 3 units, and 3 of one cut = 3 units.
+ *    Tiers:
  *      >= 3 units -> -2%
  *      >= 5 units -> -3%
  *      >= 8 units -> -5%

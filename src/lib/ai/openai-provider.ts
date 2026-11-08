@@ -108,6 +108,18 @@ class OpenAiProvider implements AiProvider {
     return TranslationResultSchema.parse(raw);
   }
 
+  /**
+   * Extract receipt fields. LIMITATION: this JSON-chat path only sends TEXT
+   * (`input.text`). It does NOT perform OCR or send the raw image/PDF bytes to a
+   * vision model, so a real extraction requires the caller to supply pre-OCR'd
+   * text in `input.text`. With only binary bytes and no text, the model receives
+   * a `[binary ... upload]` placeholder and will extract nothing useful. Wiring a
+   * vision/OCR step (e.g. an image message part or a separate OCR service) is a
+   * documented follow-up; it is intentionally out of scope here because the app
+   * defaults to the MockAiProvider and the real provider is never selected in the
+   * offline demo. Regardless of extraction quality, the result only PRE-FILLS a
+   * human-review form and creates/approves nothing.
+   */
   async extractReceipt(
     input: ExtractReceiptInput,
   ): Promise<ReceiptExtraction> {

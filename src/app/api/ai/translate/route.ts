@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { LOCALES } from "@/lib/i18n";
 import { translateField } from "@/lib/ai/translate";
+import { getApiAdmin } from "@/lib/auth";
 
 // Request body is UNTRUSTED client input -> validated with Zod.
 const BodySchema = z.object({
@@ -20,6 +21,16 @@ const BodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  // Server-side role gate (R21): the AI layer is governed and must never be
+  // driven by an anonymous caller. Mirrors the admin server actions.
+  const admin = await getApiAdmin();
+  if (!admin) {
+    return NextResponse.json(
+      { ok: false, code: "UNAUTHORIZED" },
+      { status: 401 },
+    );
+  }
+
   let json: unknown;
   try {
     json = await request.json();

@@ -163,6 +163,38 @@ describe("translateField (mock, no key)", () => {
     expect(audit[0].provider).toBe("mock");
     expect(audit[0].outputValid).toBe(true);
   });
+
+  it("reports demotedApproved when a re-run unpublishes an approved translation (issue #8)", async () => {
+    const farm = await prisma.farm.findFirstOrThrow({ where: { slug: "farm-b" } });
+    // First run produces machine rows.
+    await translateField({
+      entityType: "farm",
+      entityId: farm.id,
+      field: "story",
+      sourceText: "Una granja de prova.",
+    });
+    // A human approves the EN row.
+    const en = await prisma.translation.findFirstOrThrow({
+      where: { entityType: "farm", entityId: farm.id, field: "story", locale: "en" },
+    });
+    await prisma.translation.update({
+      where: { id: en.id },
+      data: { status: "approved" },
+    });
+
+    // Re-running resets it to machine (unpublished) -> must be surfaced.
+    const rerun = await translateField({
+      entityType: "farm",
+      entityId: farm.id,
+      field: "story",
+      sourceText: "Una granja de prova (v2).",
+    });
+    expect(rerun.demotedApproved).toContain("en");
+    const after = await prisma.translation.findFirstOrThrow({
+      where: { entityType: "farm", entityId: farm.id, field: "story", locale: "en" },
+    });
+    expect(after.status).toBe("machine");
+  });
 });
 
 describe("runWeeklyMetrics (mock, no key)", () => {

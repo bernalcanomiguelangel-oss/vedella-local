@@ -8,11 +8,22 @@
  */
 import { NextResponse } from "next/server";
 import { extractReceipt, isAcceptedReceiptMime } from "@/lib/ai/receipt";
+import { getApiAdmin } from "@/lib/auth";
 
 // Upload size cap (bytes). Keep modest; receipts are small.
 const MAX_BYTES = 8 * 1024 * 1024;
 
 export async function POST(request: Request) {
+  // Server-side role gate (R21): receipt ingestion is an admin/farm-manager
+  // task; an anonymous caller must never reach the AI layer.
+  const admin = await getApiAdmin();
+  if (!admin) {
+    return NextResponse.json(
+      { ok: false, code: "UNAUTHORIZED" },
+      { status: 401 },
+    );
+  }
+
   let form: FormData;
   try {
     form = await request.formData();
@@ -38,7 +49,19 @@ export async function POST(request: Request) {
     );
   }
 
+  // Reject oversized uploads BEFORE reading the body into memory. File.size is
+  // known from the multipart part's length, so we can bail without buffering a
+  // huge payload (defence against memory-pressure abuse).
+  if (file.size > MAX_BYTES) {
+    return NextResponse.json(
+      { ok: false, code: "TOO_LARGE" },
+      { status: 413 },
+    );
+  }
+
   const arrayBuf = await file.arrayBuffer();
+  // Belt-and-braces: re-check the actual byte length after reading in case the
+  // reported size was understated.
   if (arrayBuf.byteLength > MAX_BYTES) {
     return NextResponse.json(
       { ok: false, code: "TOO_LARGE" },

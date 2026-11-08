@@ -159,7 +159,9 @@ export async function getFarmCatalog(
   locale: Locale = DEFAULT_LOCALE,
 ): Promise<FarmCatalog | null> {
   const farm = await prisma.farm.findFirst({
-    where: { slug, isApproved: true, isActive: true },
+    // Exclude test/demo farms from the public catalog (R15), matching
+    // listOfferedFarms and search.
+    where: { slug, isApproved: true, isActive: true, isTest: false },
   });
   if (!farm) return null;
 
@@ -251,13 +253,16 @@ export async function getFarmCatalog(
   return {
     id: farm.id,
     slug: farm.slug,
-    name: farm.name,
+    // Resolve the farm header through the approved-translation index too, so the
+    // farm page honours approved ca/es/en content exactly like the homepage card
+    // (R20). The `index` already includes the farm id.
+    name: resolveContent(index, "farm", farm.id, "name", locale, farm.name),
     town: farm.town,
     comarca: farm.comarca,
     breed: farm.breed,
     foundedYear: farm.foundedYear,
     animalCount: farm.animalCount,
-    story: farm.story,
+    story: resolveContent(index, "farm", farm.id, "story", locale, farm.story),
     packs,
     cuts,
   };

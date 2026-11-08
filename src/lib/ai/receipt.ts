@@ -77,7 +77,14 @@ export async function extractReceipt(
       outcome = "invalid";
     } else {
       outputValid = true;
-      // Strip any price/approval field the provider tried to smuggle in.
+      // Two layers of defence: (1) the strict ReceiptExtractionSchema above has
+      // already DROPPED any unknown key a hostile model added (Zod strips keys
+      // not in the schema), and (2) applyGuardrails re-scans the parsed object
+      // and strips any price/approval/role/status field at any depth. Layer (2)
+      // is not redundant: it guards against a future schema that (incorrectly)
+      // models such a field, and it detects WTP-proxy wording. See
+      // tests/ai/guardrails.test.ts "RECEIPT-shaped payload" for proof it is not
+      // a no-op.
       const { value: safe } = applyGuardrails(parsed.data);
       // Force needs-evidence on any value lacking a source reference.
       const withEvidence: ReceiptExtraction = {

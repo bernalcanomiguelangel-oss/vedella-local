@@ -57,6 +57,47 @@ describe("R9: lot.farmId == product.farmId", () => {
       ),
     ).toThrow(LotValidationError);
   });
+
+  it("DB composite FK rejects a raw mismatched lot insert (bypassing the guard)", async () => {
+    // This proves the invariant is enforced by the DATABASE, not only by
+    // validateLot(): a write path that forgot the guard still cannot create a
+    // lot whose farmId differs from its product's farmId.
+    const farmA = await makeFarm(db, { slug: "farm-a-r9-db" });
+    const farmB = await makeFarm(db, { slug: "farm-b-r9-db" });
+    const product = await makeProduct(db, farmA.id); // belongs to farm A
+
+    await expect(
+      db.lot.create({
+        data: {
+          farmId: farmB.id, // wrong farm: no Product (id, farmId) pair matches
+          productId: product.id,
+          reference: "R9-DB-BAD",
+          units: 5,
+          slaughterDate: new Date("2026-01-01"),
+          cuttingDate: new Date("2026-01-02"),
+          packingDate: new Date("2026-01-03"),
+          expiryDate: new Date("2026-02-01"),
+        },
+      }),
+    ).rejects.toThrow();
+
+    // The matching pair (farm A) is accepted, confirming the FK is not simply
+    // rejecting every insert.
+    await expect(
+      db.lot.create({
+        data: {
+          farmId: farmA.id,
+          productId: product.id,
+          reference: "R9-DB-OK",
+          units: 5,
+          slaughterDate: new Date("2026-01-01"),
+          cuttingDate: new Date("2026-01-02"),
+          packingDate: new Date("2026-01-03"),
+          expiryDate: new Date("2026-02-01"),
+        },
+      }),
+    ).resolves.toBeTruthy();
+  });
 });
 
 describe("R10: date ordering slaughter <= cutting <= packing < expiry", () => {
@@ -113,16 +154,10 @@ describe("R12: units are non-negative", () => {
 });
 
 describe("R13: withdrawn lots are not publicly offered", () => {
-  it("getFarmCatalog excludes a product whose only lot is withdrawn", async () => {
-    const { getFarmCatalog } = await import("../../src/lib/catalog");
-    const { prisma } = await import("../../src/lib/db");
-    // Catalog reads the app's singleton prisma; point it at the test DB for this
-    // assertion by inserting through a dedicated offered farm then re-querying
-    // via a direct DB check (the catalog uses the app client, so we assert the
-    // rule directly here against the test db to keep isolation).
-    void prisma;
-    void getFarmCatalog;
-
+  it("excludes a product whose only lot is withdrawn (direct DB rule)", async () => {
+    // NOTE: the public-offering rule is exercised through the real getFarmCatalog
+    // in tests/integration/catalog.test.ts. Here we assert the underlying DB
+    // predicate directly against this file's isolated test db for clarity.
     const farm = await makeFarm(db, { slug: "farm-r13" });
     const offered = await makeProduct(db, farm.id, { name: "Offered" });
     await makeLot(db, farm.id, offered.id, { reference: "R13-OK", units: 10 });

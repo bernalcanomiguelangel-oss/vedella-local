@@ -99,6 +99,9 @@ model Product {
   updatedAt DateTime @updatedAt
 
   @@index([farmId])
+  // Composite candidate key so a Lot can reference (productId, farmId) together,
+  // giving DB-level enforcement of R9 (lot.farmId must equal product.farmId).
+  @@unique([id, farmId])
 }
 
 model PackItem {
@@ -117,7 +120,12 @@ model Lot {
   id         String   @id @default(cuid())
   farm       Farm     @relation(fields: [farmId], references: [id])
   farmId     String
-  product    Product  @relation(fields: [productId], references: [id])
+  // Composite FK into Product(id, farmId): this is the DB-level backstop for R9
+  // (lot.farmId must equal the owning product's farmId). Because the FK targets
+  // the (id, farmId) candidate key, a lot whose farmId differs from its
+  // product's farmId has no matching Product row and the insert is rejected by
+  // the database — not just by the validateLot() guard.
+  product    Product  @relation(fields: [productId, farmId], references: [id, farmId])
   productId  String
   reference  String   @unique // R11 unique lot reference
   units      Int      @default(0) // R12 non-negative (enforced by CHECK + guard)

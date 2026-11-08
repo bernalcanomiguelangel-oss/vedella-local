@@ -29,6 +29,13 @@ export interface TranslateFieldResult {
   outcome: "ok" | "invalid" | "error";
   /** The persisted machine-translation rows (status always "machine"). */
   stored: { locale: Locale; field: string; text: string; status: string }[];
+  /**
+   * Locales whose PREVIOUSLY APPROVED translation was demoted back to `machine`
+   * by this re-run (so it is no longer published and must be re-reviewed). Empty
+   * when nothing approved was overwritten. Surfaced so the UI/audit can warn the
+   * human that an approved translation was unpublished.
+   */
+  demotedApproved: Locale[];
 }
 
 /**
@@ -47,6 +54,7 @@ export async function translateField(
   let outcome: TranslateFieldResult["outcome"] = "ok";
   let outputValid = false;
   const stored: TranslateFieldResult["stored"] = [];
+  const demotedApproved: Locale[] = [];
 
   try {
     const result = await provider.translate({
@@ -66,6 +74,25 @@ export async function translateField(
 
       for (const item of safe.items) {
         if (!targets.includes(item.locale)) continue; // ignore unexpected locales
+
+        // Detect whether we are about to demote a human-approved translation:
+        // re-running resets status to `machine`, which UNPUBLISHES an approved
+        // row. We surface this so the human is warned (never silent).
+        const existing = await prisma.translation.findUnique({
+          where: {
+            entityType_entityId_field_locale: {
+              entityType: input.entityType,
+              entityId: input.entityId,
+              field: input.field,
+              locale: item.locale,
+            },
+          },
+          select: { status: true },
+        });
+        if (existing?.status === "approved") {
+          demotedApproved.push(item.locale as Locale);
+        }
+
         // Persist as a MACHINE translation. Status is set HERE by the app, never
         // by the model — the model can never approve its own output.
         const row = await prisma.translation.upsert({
@@ -120,5 +147,5 @@ export async function translateField(
     outcome,
   });
 
-  return { ok: outcome === "ok", outcome, stored };
+  return { ok: outcome === "ok", outcome, stored, demotedApproved };
 }

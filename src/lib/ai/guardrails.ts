@@ -24,7 +24,19 @@ const PRICE_FIELD_PATTERNS = [
   /surcharge/i,
 ];
 
-/** Field-name fragments that denote APPROVAL / PUBLISH / ACTIVE state. */
+/**
+ * Field-name fragments that denote APPROVAL / PUBLISH / ACTIVE state.
+ *
+ * CONSTRAINT FOR FUTURE USE CASES: `/status/i` strips ANY field whose name
+ * contains "status" at any depth. This is deliberate today (AI must never set
+ * approval/translation status), but it means a future AI schema that legitimately
+ * returns a field named `status` (e.g. an extraction confidence "status") would
+ * have that field SILENTLY dropped by applyGuardrails. If such a use case is
+ * added, rename the field (e.g. `extractionState`) or narrow this pattern — do
+ * not loosen it so that approval-status fields slip through. The receipt/
+ * translation/metrics schemas in schemas.ts intentionally contain no `status`
+ * field for this reason.
+ */
 const APPROVAL_FIELD_PATTERNS = [
   /approv/i,
   /publish/i,

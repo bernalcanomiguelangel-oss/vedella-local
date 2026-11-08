@@ -77,6 +77,27 @@ describe("priceBasket", () => {
     // Discount computed only on 5000, not 5600.
     expect(r.discountCents).toBe(Math.round(5000 * 0.03));
   });
+
+  // Pin the discount-UNIT interpretation (steering clarification, issue #7):
+  // the quantity on an individual cut line DOES count toward the discount tier,
+  // exactly like the quantity on a pack line. "Each pack counts as one unit"
+  // means a pack is a single sellable unit (not the sum of its included cuts);
+  // it does NOT mean cut quantities are ignored. One cut line with quantity 3
+  // therefore reaches the 3-unit (2%) tier.
+  it("counts an individual cut's quantity toward the discount tier", () => {
+    const threeCuts = priceBasket([{ unitPriceCents: 1438, quantity: 3 }]);
+    expect(threeCuts.unitCount).toBe(3);
+    expect(threeCuts.discountRate).toBe(0.02);
+
+    // A pack line is ALSO one unit per quantity (the pack is the unit, its
+    // contents are not re-counted): 1 pack + 2 cuts = 3 units -> 2% tier.
+    const mixed = priceBasket([
+      { unitPriceCents: 4200, quantity: 1 }, // 1 pack = 1 unit
+      { unitPriceCents: 1438, quantity: 2 }, // 2 cuts = 2 units
+    ]);
+    expect(mixed.unitCount).toBe(3);
+    expect(mixed.discountRate).toBe(0.02);
+  });
 });
 
 describe("cutPriceFromPackUnit", () => {

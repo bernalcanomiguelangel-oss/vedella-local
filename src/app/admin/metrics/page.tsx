@@ -10,9 +10,20 @@ export const dynamic = "force-dynamic";
  * FEAT-003 deterministic metric — AI never invents the numbers) plus basic
  * marketplace counts. Test records are excluded from the production figures.
  */
-export default async function AdminMetricsPage() {
+export default async function AdminMetricsPage({
+  searchParams,
+}: {
+  searchParams?: { week?: string };
+}) {
   await requireAdmin();
-  const data = await loadMetricsDashboard();
+  // Optional ?week=YYYY-MM-DD lets an admin inspect a historical ISO week; the
+  // default (no param) is the current week, which the seed now populates.
+  const weekParam = searchParams?.week;
+  const reference =
+    weekParam && !Number.isNaN(new Date(weekParam).getTime())
+      ? new Date(weekParam)
+      : new Date();
+  const data = await loadMetricsDashboard(reference);
 
   const m = data.marketplace;
   const cards = [
@@ -32,7 +43,29 @@ export default async function AdminMetricsPage() {
             <b>{data.weekStart}</b>). Els registres de prova queden exclosos.
           </p>
         </div>
-        <RunMetricsButton />
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Week selector: GET form so an admin can inspect any ISO week. */}
+          <form method="get" className="flex items-center gap-2">
+            <label htmlFor="week" className="text-sm text-pasture-600">
+              Setmana
+            </label>
+            <input
+              type="date"
+              id="week"
+              name="week"
+              defaultValue={weekParam ?? ""}
+              data-testid="metrics-week"
+              className="rounded-lg border border-pasture-200 px-2 py-1 text-sm"
+            />
+            <button
+              type="submit"
+              className="rounded-lg bg-pasture-100 px-3 py-1 text-sm font-semibold text-pasture-700 hover:bg-pasture-200"
+            >
+              Veure
+            </button>
+          </form>
+          <RunMetricsButton />
+        </div>
       </div>
 
       {/* Marketplace counts */}

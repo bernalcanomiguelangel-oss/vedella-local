@@ -453,6 +453,38 @@ async function main() {
       });
     }
 
+    // A CURRENT-WEEK lot per cut so the weekly metrics dashboard shows data out
+    // of the box (the historical lots above are packed weeks ago and fall into
+    // older ISO weeks). Packed two days ago, well inside the current ISO week.
+    for (let ci = 0; ci < CUTS.length; ci++) {
+      const c = CUTS[ci];
+      lotCounter++;
+      const reference = `${f.slug.toUpperCase().slice(0, 3)}-CW${String(lotCounter).padStart(4, "0")}`;
+      const day = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      const currentWeekDates = {
+        slaughterDate: new Date(now - 4 * day),
+        cuttingDate: new Date(now - 3 * day),
+        packingDate: new Date(now - 2 * day),
+        expiryDate: new Date(now + 28 * day),
+      };
+      const cwLot = {
+        farmId: farm.id,
+        productId: cutByKey[c.key],
+        reference,
+        units: 15 + ci,
+        ...currentWeekDates,
+      };
+      validateLot(cwLot, {
+        product: { id: cutByKey[c.key], farmId: farm.id },
+        existingReferences: seenReferences,
+      });
+      seenReferences.add(reference);
+      await prisma.lot.create({
+        data: { ...cwLot, isWithdrawn: false, isTest: false },
+      });
+    }
+
     // One explicit test/demo lot on the first farm (R15 metric exclusion).
     if (fi === 0) {
       lotCounter++;

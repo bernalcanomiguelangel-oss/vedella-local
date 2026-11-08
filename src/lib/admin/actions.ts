@@ -281,16 +281,28 @@ export async function requestTranslation(
     sourceText,
   });
 
+  const demoted = result.demotedApproved;
   await recordAdminAudit({
     actor: user,
     action: "translate_request",
     entityType,
     entityId,
-    detail: `field=${field} outcome=${result.outcome} stored=${result.stored.length}`,
+    detail:
+      `field=${field} outcome=${result.outcome} stored=${result.stored.length}` +
+      (demoted.length > 0
+        ? ` WARNING: unpublished approved translation(s) for ${demoted.join(",")} (reset to machine for re-review)`
+        : ""),
   });
 
   revalidatePath("/admin/review");
-  return { ok: result.ok, code: result.outcome };
+  return {
+    ok: result.ok,
+    code: result.outcome,
+    message:
+      demoted.length > 0
+        ? `S'ha tornat a generar: la traducció aprovada (${demoted.join(", ")}) torna a estar pendent de revisió i ja no es publica.`
+        : undefined,
+  };
 }
 
 /**

@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { reserve } from "@/lib/reserve";
+import { reserveRateLimiter, clientKeyFromRequest } from "@/lib/rateLimit";
 
 const BodySchema = z.object({
   items: z
@@ -31,6 +32,23 @@ const ERROR_STATUS: Record<string, number> = {
 };
 
 export async function POST(request: Request) {
+  // Reserving is legitimately public (customers reserve without logging in), so
+  // we do NOT require auth. But we bound anonymous abuse: a per-client fixed
+  // window keeps a loop from draining a cycle's free places in a burst. The
+  // authoritative no-oversell guard still lives in reserve() + the DB CHECK.
+  const rl = reserveRateLimiter.check(clientKeyFromRequest(request));
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, code: "RATE_LIMITED" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000))),
+        },
+      },
+    );
+  }
+
   let json: unknown;
   try {
     json = await request.json();

@@ -47,6 +47,42 @@ describe("applyGuardrails field stripping", () => {
     expect(report.strippedFields.length).toBeGreaterThan(0);
   });
 
+  it("strips smuggled price/approval fields from a RECEIPT-shaped payload", () => {
+    // Directly exercises the receipt guardrail path with an object that actively
+    // contains the forbidden fields (unlike the mock, which never emits them).
+    // This proves applyGuardrails is NOT a no-op: if it were removed, these
+    // assertions would fail.
+    const hostileReceipt = {
+      farmName: { value: "Mas Vallgorguina", evidence: { sourceRef: "l1", needsEvidence: false } },
+      productName: { value: "Entrecot", evidence: { sourceRef: "l2", needsEvidence: false } },
+      // Smuggled fields an adversarial model might add:
+      priceCents: 1, // must be stripped
+      basePriceCents: 1, // must be stripped
+      isApproved: true, // must be stripped
+      lifecycle: "active", // must be stripped
+      status: "approved", // must be stripped (approval status)
+      units: { value: 10, evidence: { sourceRef: "l3", needsEvidence: false } },
+    };
+    const { value, report } = applyGuardrails(hostileReceipt);
+    const json = JSON.stringify(value).toLowerCase();
+    expect(json).not.toContain("pricecents");
+    expect(json).not.toContain("isapproved");
+    expect(json).not.toContain("lifecycle");
+    expect(json).not.toContain('"status"');
+    // Legitimate extracted fields survive.
+    expect(json).toContain("entrecot");
+    expect(json).toContain("mas vallgorguina");
+    expect(report.strippedFields).toEqual(
+      expect.arrayContaining([
+        "priceCents",
+        "basePriceCents",
+        "isApproved",
+        "lifecycle",
+        "status",
+      ]),
+    );
+  });
+
   it("detects a willingness-to-pay proxy signal in text", () => {
     const { report } = applyGuardrails({
       headline: "Charge them more because they can afford it in this postcode.",
