@@ -1,0 +1,107 @@
+{
+  "locale": "en",
+  "localeName": "English",
+  "brand": "Vedella Local",
+  "nav": {
+    "home": "Market",
+    "basket": "Basket",
+    "search": "Search"
+  },
+  "hero": {
+    "eyebrow": "Local producers' market",
+    "title": "Local, traceable Catalan beef",
+    "subtitle": "Curated farms, pasture-raised cattle and farm-to-table traceability. Reserve now, pay on delivery.",
+    "cta": "Discover the farms",
+    "ctaSecondary": "How it works"
+  },
+  "search": {
+    "placeholder": "Search farms, packs or cuts…",
+    "button": "Search",
+    "noResults": "No results for your search.",
+    "farms": "Farms",
+    "products": "Products",
+    "searchingHint": "Try «entrecot», «grill» or a farm name."
+  },
+  "home": {
+    "farmsTitle": "Our farms",
+    "farmsSubtitle": "All approved and active on the marketplace.",
+    "stepsTitle": "How it works",
+    "steps": {
+      "one": "Pick a farm and the cuts or packs you like.",
+      "two": "Reserve within the open cycle. Nothing is charged now.",
+      "three": "Receive your order with refrigerated transport and pay on delivery."
+    },
+    "valuesTitle": "Why Vedella Local",
+    "values": {
+      "traceability": "Full traceability",
+      "traceabilityDesc": "Farm → Lot → Cut → Pack, with the lot code printed on every order.",
+      "local": "Zero-km and seasonal",
+      "localDesc": "Catalan farms with pasture-raised cattle and animal welfare.",
+      "fair": "Fair, clear pricing",
+      "fairDesc": "No middlemen. Volume discounts and refrigerated delivery."
+    }
+  },
+  "farm": {
+    "backToMarket": "Back to the market",
+    "foundedIn": "Since",
+    "animals": "head of cattle",
+    "breed": "Breed",
+    "packsTitle": "Packs",
+    "cutsTitle": "Individual cuts",
+    "included": "Includes",
+    "units": "u.",
+    "traceability": "Traceability",
+    "lot": "Lot",
+    "noProducts": "This farm has no published products yet."
+  },
+  "product": {
+    "weight": "Weight",
+    "thickness": "Thickness",
+    "maturation": "Maturation",
+    "packaging": "Packaging",
+    "shelfLife": "Shelf life",
+    "addToBasket": "Add to basket",
+    "added": "Added",
+    "surchargeNote": "Individual cuts include a 15% surcharge over the pack unit price."
+  },
+  "basket": {
+    "title": "Your basket",
+    "empty": "Your basket is empty.",
+    "emptyCta": "Explore the market",
+    "unit": "unit",
+    "units": "units",
+    "remove": "Remove",
+    "subtotal": "Subtotal",
+    "discount": "Discount",
+    "delivery": "Delivery",
+    "total": "Total",
+    "unitCount": "Units",
+    "discountHint": "3 u. −2% · 5 u. −3% · 8 u. −5% (each pack counts as one unit; transport is excluded from the discount).",
+    "reserve": "Reserve now",
+    "payOnDelivery": "Reserve now, pay on delivery",
+    "cycleTitle": "Active reservation cycle",
+    "cycleZone": "Zone",
+    "cycleClose": "Reservations close",
+    "cycleDelivery": "Delivery",
+    "cyclePlaces": "Free places",
+    "cycleFull": "The current cycle is full. No more reservations are accepted.",
+    "noCycle": "There is no open reservation cycle right now.",
+    "nameLabel": "Your name",
+    "emailLabel": "Email",
+    "reserving": "Reserving…"
+  },
+  "confirmation": {
+    "title": "Reservation confirmed",
+    "thanks": "Thank you for your reservation. You will pay on delivery.",
+    "orderRef": "Order reference",
+    "lotCode": "Lot code",
+    "deliveryOn": "Expected delivery",
+    "items": "Reserved products",
+    "total": "Total to pay on delivery",
+    "backHome": "Back to the market"
+  },
+  "footer": {
+    "tagline": "Local, traceable Catalan beef marketplace.",
+    "rights": "Reserve now, pay on delivery."
+  }
+}

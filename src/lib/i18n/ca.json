@@ -1,0 +1,107 @@
+{
+  "locale": "ca",
+  "localeName": "Català",
+  "brand": "Vedella Local",
+  "nav": {
+    "home": "Mercat",
+    "basket": "Cistella",
+    "search": "Cerca"
+  },
+  "hero": {
+    "eyebrow": "Mercat de proximitat",
+    "title": "Vedella local i traçable de Catalunya",
+    "subtitle": "Granges seleccionades, criança en extensiu i traçabilitat de granja a taula. Reserva ara, paga a l'entrega.",
+    "cta": "Descobreix les granges",
+    "ctaSecondary": "Com funciona"
+  },
+  "search": {
+    "placeholder": "Cerca granges, packs o talls…",
+    "button": "Cerca",
+    "noResults": "Cap resultat per a la teva cerca.",
+    "farms": "Granges",
+    "products": "Productes",
+    "searchingHint": "Prova amb «entrecot», «graella» o el nom d'una granja."
+  },
+  "home": {
+    "farmsTitle": "Les nostres granges",
+    "farmsSubtitle": "Totes aprovades i actives al mercat.",
+    "stepsTitle": "Com funciona",
+    "steps": {
+      "one": "Tria la granja i els talls o packs que t'agradin.",
+      "two": "Reserva dins del cicle obert. No es cobra res ara.",
+      "three": "Reps la comanda amb transport refrigerat i pagues a l'entrega."
+    },
+    "valuesTitle": "Per què Vedella Local",
+    "values": {
+      "traceability": "Traçabilitat completa",
+      "traceabilityDesc": "Granja → Lot → Tall → Paquet, amb el codi de lot imprès a cada comanda.",
+      "local": "Km 0 i de temporada",
+      "localDesc": "Granges catalanes amb criança en extensiu i benestar animal.",
+      "fair": "Preu just i clar",
+      "fairDesc": "Sense intermediaris. Descomptes per volum i lliurament refrigerat."
+    }
+  },
+  "farm": {
+    "backToMarket": "Torna al mercat",
+    "foundedIn": "Des de",
+    "animals": "caps de bestiar",
+    "breed": "Raça",
+    "packsTitle": "Packs",
+    "cutsTitle": "Talls individuals",
+    "included": "Inclou",
+    "units": "u.",
+    "traceability": "Traçabilitat",
+    "lot": "Lot",
+    "noProducts": "Aquesta granja encara no té productes publicats."
+  },
+  "product": {
+    "weight": "Pes",
+    "thickness": "Gruix",
+    "maturation": "Maduració",
+    "packaging": "Envàs",
+    "shelfLife": "Conservació",
+    "addToBasket": "Afegeix a la cistella",
+    "added": "Afegit",
+    "surchargeNote": "Els talls individuals inclouen un recàrrec del 15% sobre el preu unitari del pack."
+  },
+  "basket": {
+    "title": "La teva cistella",
+    "empty": "La cistella és buida.",
+    "emptyCta": "Explora el mercat",
+    "unit": "unitat",
+    "units": "unitats",
+    "remove": "Treu",
+    "subtotal": "Subtotal",
+    "discount": "Descompte",
+    "delivery": "Lliurament",
+    "total": "Total",
+    "unitCount": "Unitats",
+    "discountHint": "3 u. −2% · 5 u. −3% · 8 u. −5% (cada pack compta com una unitat; el transport no entra al descompte).",
+    "reserve": "Reserva ara",
+    "payOnDelivery": "Reserva ara, paga a l'entrega",
+    "cycleTitle": "Cicle de reserva actiu",
+    "cycleZone": "Zona",
+    "cycleClose": "Tancament de reserves",
+    "cycleDelivery": "Lliurament",
+    "cyclePlaces": "Places lliures",
+    "cycleFull": "El cicle actual està complet. No s'accepten més reserves.",
+    "noCycle": "Ara mateix no hi ha cap cicle de reserva obert.",
+    "nameLabel": "El teu nom",
+    "emailLabel": "Correu electrònic",
+    "reserving": "Reservant…"
+  },
+  "confirmation": {
+    "title": "Reserva confirmada",
+    "thanks": "Gràcies per la teva reserva. Pagaràs a l'entrega.",
+    "orderRef": "Referència de comanda",
+    "lotCode": "Codi de lot",
+    "deliveryOn": "Lliurament previst",
+    "items": "Productes reservats",
+    "total": "Total a pagar a l'entrega",
+    "backHome": "Torna al mercat"
+  },
+  "footer": {
+    "tagline": "Mercat de vedella local i traçable de Catalunya.",
+    "rights": "Reserva ara, paga a l'entrega."
+  }
+}

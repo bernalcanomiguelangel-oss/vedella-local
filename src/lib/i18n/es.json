@@ -1,0 +1,107 @@
+{
+  "locale": "es",
+  "localeName": "Español",
+  "brand": "Vedella Local",
+  "nav": {
+    "home": "Mercado",
+    "basket": "Cesta",
+    "search": "Buscar"
+  },
+  "hero": {
+    "eyebrow": "Mercado de proximidad",
+    "title": "Ternera local y trazable de Cataluña",
+    "subtitle": "Granjas seleccionadas, cría en extensivo y trazabilidad de la granja a la mesa. Reserva ahora, paga en la entrega.",
+    "cta": "Descubre las granjas",
+    "ctaSecondary": "Cómo funciona"
+  },
+  "search": {
+    "placeholder": "Busca granjas, packs o cortes…",
+    "button": "Buscar",
+    "noResults": "Ningún resultado para tu búsqueda.",
+    "farms": "Granjas",
+    "products": "Productos",
+    "searchingHint": "Prueba con «entrecot», «parrilla» o el nombre de una granja."
+  },
+  "home": {
+    "farmsTitle": "Nuestras granjas",
+    "farmsSubtitle": "Todas aprobadas y activas en el mercado.",
+    "stepsTitle": "Cómo funciona",
+    "steps": {
+      "one": "Elige la granja y los cortes o packs que te gusten.",
+      "two": "Reserva dentro del ciclo abierto. No se cobra nada ahora.",
+      "three": "Recibes el pedido con transporte refrigerado y pagas en la entrega."
+    },
+    "valuesTitle": "Por qué Vedella Local",
+    "values": {
+      "traceability": "Trazabilidad completa",
+      "traceabilityDesc": "Granja → Lote → Corte → Paquete, con el código de lote impreso en cada pedido.",
+      "local": "Km 0 y de temporada",
+      "localDesc": "Granjas catalanas con cría en extensivo y bienestar animal.",
+      "fair": "Precio justo y claro",
+      "fairDesc": "Sin intermediarios. Descuentos por volumen y entrega refrigerada."
+    }
+  },
+  "farm": {
+    "backToMarket": "Volver al mercado",
+    "foundedIn": "Desde",
+    "animals": "cabezas de ganado",
+    "breed": "Raza",
+    "packsTitle": "Packs",
+    "cutsTitle": "Cortes individuales",
+    "included": "Incluye",
+    "units": "u.",
+    "traceability": "Trazabilidad",
+    "lot": "Lote",
+    "noProducts": "Esta granja todavía no tiene productos publicados."
+  },
+  "product": {
+    "weight": "Peso",
+    "thickness": "Grosor",
+    "maturation": "Maduración",
+    "packaging": "Envase",
+    "shelfLife": "Conservación",
+    "addToBasket": "Añadir a la cesta",
+    "added": "Añadido",
+    "surchargeNote": "Los cortes individuales incluyen un recargo del 15% sobre el precio unitario del pack."
+  },
+  "basket": {
+    "title": "Tu cesta",
+    "empty": "La cesta está vacía.",
+    "emptyCta": "Explora el mercado",
+    "unit": "unidad",
+    "units": "unidades",
+    "remove": "Quitar",
+    "subtotal": "Subtotal",
+    "discount": "Descuento",
+    "delivery": "Entrega",
+    "total": "Total",
+    "unitCount": "Unidades",
+    "discountHint": "3 u. −2% · 5 u. −3% · 8 u. −5% (cada pack cuenta como una unidad; el transporte no entra en el descuento).",
+    "reserve": "Reservar ahora",
+    "payOnDelivery": "Reserva ahora, paga en la entrega",
+    "cycleTitle": "Ciclo de reserva activo",
+    "cycleZone": "Zona",
+    "cycleClose": "Cierre de reservas",
+    "cycleDelivery": "Entrega",
+    "cyclePlaces": "Plazas libres",
+    "cycleFull": "El ciclo actual está completo. No se aceptan más reservas.",
+    "noCycle": "Ahora mismo no hay ningún ciclo de reserva abierto.",
+    "nameLabel": "Tu nombre",
+    "emailLabel": "Correo electrónico",
+    "reserving": "Reservando…"
+  },
+  "confirmation": {
+    "title": "Reserva confirmada",
+    "thanks": "Gracias por tu reserva. Pagarás en la entrega.",
+    "orderRef": "Referencia de pedido",
+    "lotCode": "Código de lote",
+    "deliveryOn": "Entrega prevista",
+    "items": "Productos reservados",
+    "total": "Total a pagar en la entrega",
+    "backHome": "Volver al mercado"
+  },
+  "footer": {
+    "tagline": "Mercado de ternera local y trazable de Cataluña.",
+    "rights": "Reserva ahora, paga en la entrega."
+  }
+}

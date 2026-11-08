@@ -347,6 +347,49 @@ async function main() {
       });
     }
 
+    // A product whose only lot is withdrawn (R13): it must NOT be publicly
+    // offered. Seeded on the second farm so the marketplace has a concrete
+    // example the integration tests and demo can rely on.
+    if (fi === 1) {
+      const withdrawnProduct = await prisma.product.create({
+        data: {
+          farmId: farm.id,
+          kind: "cut",
+          name: "Ossobuc (exhaurit)",
+          description:
+            "Ossobuc de vedella per a cocció lenta. Lot retirat: no disponible.",
+          basePriceCents: 1120,
+          weight: "≈ 450 g",
+          thickness: "3 cm",
+          maturation: "Carn fresca",
+          packaging: "Envasat al buit",
+          shelfLife: "8 dies en fred (0–4 °C)",
+          lifecycle: "active",
+          isApproved: true,
+          isActive: true,
+          isTest: false,
+        },
+      });
+      lotCounter++;
+      const reference = `${f.slug.toUpperCase().slice(0, 3)}-WD-${String(lotCounter).padStart(4, "0")}`;
+      const dates = lotDates(3);
+      const withdrawnLot = {
+        farmId: farm.id,
+        productId: withdrawnProduct.id,
+        reference,
+        units: 8,
+        ...dates,
+      };
+      validateLot(withdrawnLot, {
+        product: { id: withdrawnProduct.id, farmId: farm.id },
+        existingReferences: seenReferences,
+      });
+      seenReferences.add(reference);
+      await prisma.lot.create({
+        data: { ...withdrawnLot, isWithdrawn: true, isTest: false },
+      });
+    }
+
     // One explicit test/demo lot on the first farm (R15 metric exclusion).
     if (fi === 0) {
       lotCounter++;
