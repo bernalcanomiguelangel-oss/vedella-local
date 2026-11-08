@@ -145,6 +145,11 @@ async function addCheckConstraints(prisma: PrismaClient): Promise<void> {
         "slaughterDate" <= "cuttingDate"
         AND "cuttingDate" <= "packingDate"
         AND "packingDate" < "expiryDate"
+      ),
+      -- M8 guarded backing invariant (migration 20261115000000): a lot must
+      -- reference a legacy product OR a new offer (never both null).
+      CONSTRAINT "Lot_backed_by_product_or_offer" CHECK (
+        "productId" IS NOT NULL OR "farmProductOfferId" IS NOT NULL
       )
     );
   `);

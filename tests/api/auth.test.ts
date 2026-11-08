@@ -20,14 +20,14 @@ const translateField = vi.fn();
 vi.mock("@/lib/ai/translate", () => ({ translateField: (x: unknown) => translateField(x) }));
 
 const extractReceipt = vi.fn();
-const isAcceptedReceiptMime = vi.fn(() => true);
+const isAcceptedReceiptMime = vi.fn((_x: string) => true);
 vi.mock("@/lib/ai/receipt", () => ({
   extractReceipt: (x: unknown) => extractReceipt(x),
   isAcceptedReceiptMime: (x: string) => isAcceptedReceiptMime(x),
 }));
 
-const runWeeklyMetrics = vi.fn();
-const computeWeeklyAverages = vi.fn();
+const runWeeklyMetrics = vi.fn<(x: unknown) => unknown>();
+const computeWeeklyAverages = vi.fn<(x: unknown) => unknown>();
 vi.mock("@/lib/ai/metrics", () => ({
   runWeeklyMetrics: (x: unknown) => runWeeklyMetrics(x),
   computeWeeklyAverages: (x: unknown) => computeWeeklyAverages(x),

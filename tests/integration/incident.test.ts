@@ -5,7 +5,13 @@
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { createTestDb, type TestDb } from "../helpers/testDb";
-import { makeFarm, makeCycle, validLotDates } from "../helpers/fixtures";
+import {
+  makeFarm,
+  makeCycle,
+  makeDefinition,
+  makeOffer,
+  makeOfferLot,
+} from "../helpers/fixtures";
 import {
   createIncident,
   listIncidents,
@@ -27,6 +33,18 @@ afterAll(async () => {
 });
 
 const platform: ScopedUser = { role: "platform_admin", farmId: null };
+
+// A lot must be backed by a product or an offer (M8 Lot_backed_by_product_or_offer
+// CHECK). Incident lots belong to a farm's offer, so back each test lot with a
+// real FarmProductOffer for that farm.
+async function makeIncidentLot(
+  farmId: string,
+  overrides: { reference: string; units: number; isWithdrawn?: boolean },
+) {
+  const def = await makeDefinition(db);
+  const offer = await makeOffer(db, farmId, def.id);
+  return makeOfferLot(db, farmId, offer.id, overrides);
+}
 
 describe("incident farm scope", () => {
   it("a farm_manager sees only their own farm's incidents", async () => {
@@ -77,9 +95,7 @@ describe("incident farm scope", () => {
     const farmB = await makeFarm(db, { slug: "scope-f", name: "Farm F" });
     const mgrA: ScopedUser = { role: "farm_manager", farmId: farmA.id };
 
-    const lotB = await db.lot.create({
-      data: { farmId: farmB.id, reference: "LOT-SCOPE-B", units: 5, ...validLotDates() },
-    });
+    const lotB = await makeIncidentLot(farmB.id, { reference: "LOT-SCOPE-B", units: 5 });
     const inc = await createIncident(db, platform, {
       reference: "INC-SCOPE-B",
       category: "lot",
@@ -99,9 +115,7 @@ describe("high-severity lot incident remediation", () => {
     const farm = await makeFarm(db, { slug: "remed", name: "Remediation Farm" });
     const cycle = await makeCycle(db);
 
-    const lot = await db.lot.create({
-      data: { farmId: farm.id, reference: "LOT-REMED-1", units: 10, ...validLotDates() },
-    });
+    const lot = await makeIncidentLot(farm.id, { reference: "LOT-REMED-1", units: 10 });
 
     // Two orders carry an item from this lot: one unfulfilled, one fulfilled.
     const unfulfilled = await db.order.create({
@@ -168,9 +182,7 @@ describe("high-severity lot incident remediation", () => {
 
   it("refuses withdrawal for a low-severity or non-lot incident", async () => {
     const farm = await makeFarm(db, { slug: "remed2", name: "Remediation Farm 2" });
-    const lot = await db.lot.create({
-      data: { farmId: farm.id, reference: "LOT-REMED-2", units: 3, ...validLotDates() },
-    });
+    const lot = await makeIncidentLot(farm.id, { reference: "LOT-REMED-2", units: 3 });
 
     const lowSev = await createIncident(db, platform, {
       reference: "INC-LOW",

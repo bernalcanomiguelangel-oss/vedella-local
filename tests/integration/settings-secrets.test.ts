@@ -34,7 +34,7 @@ describe("buildAiDiagnostics presence-only", () => {
       AI_API_KEY: FAKE_KEY,
       AI_PROVIDER: "openai",
       AI_TRANSLATION_ENABLED: "true",
-    } as NodeJS.ProcessEnv);
+    } as unknown as NodeJS.ProcessEnv);
 
     expect(diag.hasApiKey).toBe(true);
     expect(diag.flags.translation).toBe(true);
@@ -50,7 +50,7 @@ describe("buildAiDiagnostics presence-only", () => {
   });
 
   it("reports hasApiKey=false in mock mode", () => {
-    const diag = buildAiDiagnostics({} as NodeJS.ProcessEnv);
+    const diag = buildAiDiagnostics({} as unknown as NodeJS.ProcessEnv);
     expect(diag.hasApiKey).toBe(false);
     expect(diag.provider).toBe("mock");
   });

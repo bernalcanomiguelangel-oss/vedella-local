@@ -374,7 +374,10 @@ model Lot {
   productId  String?
   // NEW composite FK into FarmProductOffer(id, farmId): the DB-level backstop
   // for R9 under the two-level model (lot.farmId must equal its offer's farmId).
-  // Nullable this phase; flipped non-null for cut-backed lots in a later feature.
+  // Stays nullable: receipt-prefilled legacy lots and pack/other lots may have a
+  // null offer. M8 adds a guarded CHECK (Lot_backed_by_product_or_offer, in the
+  // 20261115000000 migration) requiring productId OR farmProductOfferId to be
+  // set, rather than a blanket NOT NULL that would reject those legitimate rows.
   offer             FarmProductOffer? @relation(fields: [farmProductOfferId, farmId], references: [id, farmId])
   farmProductOfferId String?
   reference  String   @unique // R11 unique lot reference
@@ -686,6 +689,11 @@ model AnalyticsEvent {
   @@index([anonSessionId])
   @@index([farmId])
   @@index([createdAt])
+  // M7 grouping dimensions for the admin dashboards.
+  @@index([offerId])
+  @@index([definitionId])
+  @@index([packId])
+  @@index([cycleId])
 }
 
 // First- and latest-touch channel attribution for an anonymous session, plus
@@ -771,6 +779,12 @@ model Incident {
   @@index([farmId])
   @@index([status])
   @@index([lotId])
+  // M7 structured-link indexes for the incident browser's filters/joins.
+  @@index([productDefinitionId])
+  @@index([farmProductOfferId])
+  @@index([packId])
+  @@index([cycleId])
+  @@index([orderId])
 }
 
 model WebsiteText {

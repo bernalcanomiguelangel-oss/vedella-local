@@ -1,8 +1,12 @@
 # Migration plan (safe, backwards-compatible)
 
-> **This plan is NOT executed in this pass.** No `prisma migrate` / `db push` is run; no
-> committed migration or seed is mutated here. The plan describes the safe order to apply
-> later, after the user reviews. Grounded in the real schema at commit `2adc95d`.
+> **Status: IMPLEMENTED (FEAT-001 … FEAT-008).** This plan has now been executed as a
+> set of committed, in-order migrations under `prisma/migrations/`. The notes below are
+> kept as the design record; where the implementation diverged from the original sketch
+> it is called out inline (see **M8** and §11). Phases M1–M6 shipped additive tables/
+> columns + backfills; **M7** added the remaining indexes; **M8** added the guarded Lot
+> backing invariant and switched the public read path to the offer model behind a
+> default-on flag. Grounded in the real schema from commit `2adc95d` onward.
 
 ## 0. Principles
 
@@ -100,6 +104,16 @@ Add indexes (`FarmProductOffer.farmId`, `.productDefinitionId`, `AnalyticsEvent`
 verification queries report zero violations. Add the offer composite candidate key
 `@@unique([id, farmId])` before M4's Lot rebuild depends on it.
 
+> **Implemented (migration `20261114000000_m7_indexes_constraints`).** Several indexes
+> were already created by earlier feature migrations
+> (`FarmProductOffer.farmId`/`.productDefinitionId`; `AnalyticsEvent`
+> type/anonSessionId/farmId/createdAt; `Incident` farmId/status/lotId) and the offer
+> composite candidate key shipped in M4. M7 therefore adds only the **remaining**
+> dimension/link indexes (`AnalyticsEvent` offerId/definitionId/packId/cycleId;
+> `Incident` productDefinitionId/farmProductOfferId/packId/cycleId/orderId) as
+> `CREATE INDEX IF NOT EXISTS`, so nothing is duplicated. The cross-table integrity the
+> plan refers to (R9 composite FKs) was already enforced from M4.
+
 ## 8. Phase M8 — make columns non-null & enable
 
 Only after verification: flip verified columns to non-null in a dedicated migration
@@ -107,6 +121,28 @@ Only after verification: flip verified columns to non-null in a dedicated migrat
 new read paths behind a feature flag so the public catalog/admin switch from `Product` to
 offers in one controlled step, with the old `Product` table retained read-only until a
 later cleanup migration.
+
+> **Implemented (migration `20261115000000_m8_lot_backing_guard`), with two divergences:**
+>
+> 1. `FarmProductOffer.productDefinitionId` was **already `NOT NULL`** from the FEAT-003
+>    migration (`20261109010000_add_product_definition_and_offer`), so M8 needed no change
+>    there — the verified non-null guarantee already held.
+> 2. `Lot.farmProductOfferId` is **NOT** flipped to a blanket `NOT NULL`. Receipt
+>    ingestion (`src/lib/admin/core.ts`) legitimately pre-fills a legacy `Product` + `Lot`
+>    for human review with a null offer, and pack/other lots may legitimately be
+>    offer-null. A blanket `NOT NULL` would reject those. Instead M8 adds the guarded
+>    CHECK `Lot_backed_by_product_or_offer` (productId OR farmProductOfferId must be set),
+>    which 100% of live rows satisfy, giving the "a lot can never dangle" guarantee
+>    without rejecting legitimate nulls.
+>
+> The public read path is on the offer model via `offerModelEnabled()` (default **ON**,
+> FEAT-007). The FEAT-007 **transitional legacy-Product union** in
+> `getFarmCatalogFromOffers` was **kept**, not removed: the demo seeds a
+> legacy-Product-only cut (`Secret de vedella`) with no backing offer that the admin
+> approve → publish → public-visibility e2e flow depends on; removing the union made that
+> human-approved product disappear from the offer-backed farm page (a seeded-farm
+> regression). Per principle 4 / §9, the union stays and de-duplicates by name so an
+> offer always wins.
 
 ## 9. Rollback
 
@@ -128,7 +164,11 @@ use.
 - M6: the active cycle's public facts render identically to before.
 - Full `npm test` + `npm run test:e2e` green after each phase.
 
-## 11. Explicitly out of scope for THIS pass
+## 11. Explicitly out of scope / deferred
 
-No migration file is written or applied; `prisma/seed.ts`, `prisma/dev.db`, and all
-committed migrations are left untouched. Implementation begins only after user review.
+Implementation is complete through M8. The only remaining, deliberately **deferred**
+work is the destructive cleanup: dropping `Lot.productId` and the legacy `Product`
+table. These are kept **readable** this release (nothing a human approved is lost, and
+the transitional legacy-Product union in the catalog still depends on them for the
+seeded `Secret de vedella` flow). The cleanup should run as its own later migration only
+after the offer model has been verified in production use.

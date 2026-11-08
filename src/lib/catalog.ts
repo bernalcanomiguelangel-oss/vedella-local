@@ -574,8 +574,16 @@ export async function getFarmCatalogFromOffers(
   // Transitional union (M8): a legacy Product that is approved+active and backed
   // by a usable lot, but whose canonical name is NOT already represented by an
   // offered offer, is still surfaced from the legacy path so nothing a human
-  // approved disappears while the offer model is finalised (FEAT-008 removes
-  // this). De-duplicates by public name so an offered offer always wins.
+  // approved disappears while the offer model is finalised.
+  //
+  // FEAT-008 note: FEAT-007 planned to REMOVE this union once offers are the
+  // source. It is KEPT because the demo seeds a legacy-Product-only cut ("Secret
+  // de vedella") with NO backing offer, used by the admin approve -> publish ->
+  // public-visibility e2e flow (e2e/admin-approve.spec.ts). Dropping the union
+  // makes that human-approved product vanish from the offer-backed farm page,
+  // breaking a seeded farm scenario. Per the plan's "keep it if removal breaks a
+  // seeded farm", the union stays; it still de-duplicates by public name so an
+  // offered offer always wins and nothing is shown twice.
   const offeredNames = new Set(cuts.map((c) => c.name));
   const legacyProducts = await prisma.product.findMany({
     where: {
