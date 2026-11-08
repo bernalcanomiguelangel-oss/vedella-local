@@ -2,8 +2,10 @@ import { requireAdmin } from "@/lib/auth";
 import {
   listPendingRecords,
   listPendingTranslations,
+  listReviewQueueExtended,
 } from "@/lib/admin/data";
 import { ReviewQueue } from "@/components/admin/ReviewQueue";
+import { ExtendedReviewQueue } from "@/components/admin/ExtendedReviewQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +17,10 @@ export const dynamic = "force-dynamic";
  */
 export default async function AdminReviewPage() {
   const user = await requireAdmin();
-  const [pending, translations] = await Promise.all([
+  const [pending, translations, extended] = await Promise.all([
     listPendingRecords(user),
     listPendingTranslations(user),
+    listReviewQueueExtended(user),
   ]);
 
   return (
@@ -34,6 +37,35 @@ export default async function AdminReviewPage() {
         pendingFarms={pending.farms}
         pendingProducts={pending.products}
         translations={translations}
+      />
+
+      <ExtendedReviewQueue
+        isPlatform={user.role === "platform_admin"}
+        offers={extended.offers.map((o) => ({
+          id: o.id,
+          label: `${o.farm.name} · ${o.publicName}`,
+          sublabel: o.productDefinition.canonicalName,
+        }))}
+        lots={extended.lots.map((l) => ({
+          id: l.id,
+          label: l.reference,
+          sublabel: l.farm.name,
+        }))}
+        certs={extended.certs.map((c) => ({
+          id: c.id,
+          label: c.title,
+          sublabel: `${c.farm.name} · ${c.type}`,
+        }))}
+        profileEdits={extended.profileEdits.map((p) => ({
+          id: p.id,
+          label: `Perfil: ${p.farm.name}`,
+          sublabel: Object.keys(JSON.parse(p.changes)).join(", "),
+        }))}
+        packs={extended.packs.map((p) => ({
+          id: p.id,
+          label: p.publicName,
+          sublabel: p.isMultiFarm ? "multi-granja" : "una granja",
+        }))}
       />
     </div>
   );

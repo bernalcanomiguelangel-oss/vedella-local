@@ -69,6 +69,62 @@ export default async function FarmPage({
         </div>
       </section>
 
+      {/* Rich profile + approved certifications (decision 3 / rule C). Only
+          approved certifications are ever shown; unverified claims are never
+          exposed by getFarmCatalog. */}
+      {(farm.profile.productionMethod ||
+        farm.profile.traceabilityInfo ||
+        farm.profile.welfareInfo ||
+        farm.profile.feedInfo ||
+        farm.certifications.length > 0) && (
+        <section className="mx-auto max-w-6xl px-6 pt-8">
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-3 text-sm text-pasture-800">
+              {farm.profile.productionMethod && (
+                <p>
+                  <span className="font-semibold">Mètode de producció:</span>{" "}
+                  {farm.profile.productionMethod}
+                </p>
+              )}
+              {farm.profile.welfareInfo && (
+                <p>
+                  <span className="font-semibold">Benestar animal:</span>{" "}
+                  {farm.profile.welfareInfo}
+                </p>
+              )}
+              {farm.profile.feedInfo && (
+                <p>
+                  <span className="font-semibold">Alimentació:</span>{" "}
+                  {farm.profile.feedInfo}
+                </p>
+              )}
+              {farm.profile.traceabilityInfo && (
+                <p>
+                  <span className="font-semibold">Traçabilitat:</span>{" "}
+                  {farm.profile.traceabilityInfo}
+                </p>
+              )}
+            </div>
+            {farm.certifications.length > 0 && (
+              <div>
+                <h3 className="font-semibold text-pasture-900">Certificacions</h3>
+                <ul className="mt-2 space-y-2">
+                  {farm.certifications.map((c) => (
+                    <li
+                      key={c.id}
+                      className="rounded-lg bg-pasture-50 px-3 py-2 text-sm ring-1 ring-pasture-100"
+                    >
+                      <span className="font-semibold">{c.title}</span>
+                      {c.body && <p className="text-pasture-700">{c.body}</p>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* Traceability chain */}
       <section className="mx-auto max-w-6xl px-6 pt-8">
         <div className="flex flex-wrap items-center gap-2 rounded-xl bg-pasture-50 px-4 py-3 text-sm text-pasture-700 ring-1 ring-pasture-100">

@@ -95,9 +95,27 @@ export interface OfferedFarm {
   story: string;
 }
 
+export interface PublicCertification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+}
+
+export interface FarmProfileExtras {
+  productionMethod: string | null;
+  traceabilityInfo: string | null;
+  welfareInfo: string | null;
+  feedInfo: string | null;
+  locationDetail: string | null;
+}
+
 export interface FarmCatalog extends OfferedFarm {
   packs: OfferedPack[];
   cuts: OfferedCut[];
+  /** ONLY approved certifications are ever exposed publicly (rule C). */
+  certifications: PublicCertification[];
+  profile: FarmProfileExtras;
 }
 
 /**
@@ -162,6 +180,11 @@ export async function getFarmCatalog(
     // Exclude test/demo farms from the public catalog (R15), matching
     // listOfferedFarms and search.
     where: { slug, isApproved: true, isActive: true, isTest: false },
+    include: {
+      // ONLY approved certifications are exposed to this public read path.
+      // Unverified (draft/pending_review/rejected) claims are never selected.
+      certifications: { where: { status: "approved" }, orderBy: { createdAt: "asc" } },
+    },
   });
   if (!farm) return null;
 
@@ -265,6 +288,19 @@ export async function getFarmCatalog(
     story: resolveContent(index, "farm", farm.id, "story", locale, farm.story),
     packs,
     cuts,
+    certifications: farm.certifications.map((c) => ({
+      id: c.id,
+      type: c.type,
+      title: c.title,
+      body: c.body,
+    })),
+    profile: {
+      productionMethod: farm.productionMethod,
+      traceabilityInfo: farm.traceabilityInfo,
+      welfareInfo: farm.welfareInfo,
+      feedInfo: farm.feedInfo,
+      locationDetail: farm.locationDetail,
+    },
   };
 }
 

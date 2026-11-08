@@ -162,6 +162,8 @@ async function addCheckConstraints(prisma: PrismaClient): Promise<void> {
   );
 
   // ReservationCycle: freePlaces >= 0 and freePlaces <= totalPlaces (no oversell).
+  // Includes the FEAT-004/M6 enrichment columns (all nullable) so db-push-based
+  // test databases carry the same shape as the committed migration.
   await prisma.$executeRawUnsafe(`
     CREATE TABLE "ReservationCycle_new" (
       "id" TEXT NOT NULL PRIMARY KEY,
@@ -174,6 +176,13 @@ async function addCheckConstraints(prisma: PrismaClient): Promise<void> {
       "transportNote" TEXT NOT NULL DEFAULT '',
       "isActive" BOOLEAN NOT NULL DEFAULT false,
       "isTest" BOOLEAN NOT NULL DEFAULT false,
+      "internalName" TEXT,
+      "publicTitle" TEXT,
+      "status" TEXT DEFAULT 'open',
+      "openAt" DATETIME,
+      "closeAt" DATETIME,
+      "pickupDate" DATETIME,
+      "deliveryPriceCents" INTEGER,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL,
       CONSTRAINT "ReservationCycle_places_valid" CHECK (

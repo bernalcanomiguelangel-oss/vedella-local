@@ -97,6 +97,78 @@ export async function makeLot(
   });
 }
 
+export async function makeDefinition(
+  db: PrismaClient,
+  overrides: Partial<{
+    canonicalName: string;
+    isApproved: boolean;
+    isActive: boolean;
+  }> = {},
+) {
+  const name = overrides.canonicalName ?? "Entrecot";
+  return db.productDefinition.create({
+    data: {
+      canonicalName: name,
+      category: "steak",
+      translationKey: `product-definition.${name.toLowerCase()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      lifecycle: overrides.isApproved === false ? "draft" : "active",
+      isApproved: overrides.isApproved ?? true,
+      isActive: overrides.isActive ?? true,
+    },
+  });
+}
+
+export async function makeOffer(
+  db: PrismaClient,
+  farmId: string,
+  productDefinitionId: string,
+  overrides: Partial<{
+    publicName: string;
+    priceAmountCents: number;
+    isApproved: boolean;
+    isActive: boolean;
+    lifecycle: string;
+  }> = {},
+) {
+  const approved = overrides.isApproved ?? true;
+  const active = overrides.isActive ?? true;
+  return db.farmProductOffer.create({
+    data: {
+      farmId,
+      productDefinitionId,
+      publicName: overrides.publicName ?? "Entrecot",
+      priceAmountCents: overrides.priceAmountCents ?? 1438,
+      priceUnit: "per_unit",
+      currency: "EUR",
+      lifecycle: overrides.lifecycle ?? (active ? "active" : approved ? "approved" : "draft"),
+      isApproved: approved,
+      isActive: active,
+    },
+  });
+}
+
+export async function makeOfferLot(
+  db: PrismaClient,
+  farmId: string,
+  offerId: string,
+  overrides: Partial<{ reference: string; units: number; isWithdrawn: boolean }> = {},
+) {
+  return db.lot.create({
+    data: {
+      farmId,
+      farmProductOfferId: offerId,
+      reference:
+        overrides.reference ?? `OREF-${Math.random().toString(36).slice(2, 10)}`,
+      units: overrides.units ?? 20,
+      isWithdrawn: overrides.isWithdrawn ?? false,
+      isTest: false,
+      ...validLotDates(),
+    },
+  });
+}
+
 export async function makeCycle(
   db: PrismaClient,
   overrides: Partial<{

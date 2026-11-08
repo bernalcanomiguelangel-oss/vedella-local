@@ -12,6 +12,11 @@ import { PrismaClient } from "@prisma/client";
 import { validateLot } from "../src/lib/validateLot";
 import { hashPassword } from "../src/lib/password";
 import { backfillOffers, verifyBackfill } from "../src/lib/migrate/backfill-offers";
+import { populateCycleOfferAvailability } from "../src/lib/admin/manage";
+import {
+  backfillOrders,
+  verifyOrderTotalsUnchanged,
+} from "../src/lib/migrate/backfill-orders";
 
 const prisma = new PrismaClient();
 
@@ -226,10 +231,18 @@ async function main() {
   console.log("Seeding Vedella Local...");
 
   // Clean slate (safe for a dev SQLite DB).
+  await prisma.fulfilmentGroup.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.packItemV2.deleteMany();
+  await prisma.packFarmAcceptance.deleteMany();
+  await prisma.pack.deleteMany();
   await prisma.packItem.deleteMany();
+  await prisma.cycleOfferAvailability.deleteMany();
+  await prisma.cycleFarm.deleteMany();
   await prisma.lot.deleteMany();
+  await prisma.farmCertification.deleteMany();
+  await prisma.farmProfileEdit.deleteMany();
   await prisma.farmProductOffer.deleteMany();
   await prisma.productDefinition.deleteMany();
   await prisma.product.deleteMany();
@@ -556,7 +569,7 @@ async function main() {
   // One active reservation cycle: 50 places, 13 taken -> 37 free.
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
-  await prisma.reservationCycle.create({
+  const cycle = await prisma.reservationCycle.create({
     data: {
       name: "Cicle novembre 2026",
       zone: "Vallès Oriental",
@@ -567,6 +580,13 @@ async function main() {
       transportNote: "Transport refrigerat (0–4 °C) fins al punt de lliurament.",
       isActive: true,
       isTest: false,
+      internalName: "nov-2026",
+      publicTitle: "Cicle novembre 2026",
+      status: "open",
+      openAt: new Date(now - 5 * day),
+      closeAt: new Date(now + 20 * day),
+      pickupDate: new Date(now + 30 * day),
+      deliveryPriceCents: 600,
     },
   });
 
@@ -582,6 +602,104 @@ async function main() {
   );
   console.log(
     `  ✓ Backfill gates OK: offers (${verified.offers}) == cut products (${verified.cutProducts}); ${verified.repointedLots}/${verified.cutLots} cut-lots carry an offer with matching farmId.`,
+  );
+
+  // --- M6: participating farms + CycleOfferAvailability for the active cycle. --
+  const allFarms = await prisma.farm.findMany();
+  for (const f of allFarms) {
+    await prisma.cycleFarm.create({
+      data: { cycleId: cycle.id, farmId: f.id, allocatedPlaces: 25 },
+    });
+  }
+  const availability = await populateCycleOfferAvailability(prisma, cycle.id);
+  console.log(
+    `  ✓ Cycle availability (M6): ${availability.eligible} offers with an eligible lot, ${availability.ineligible} without.`,
+  );
+
+  // --- A seeded multi-farm pack demonstrating the dual-accept workflow. One
+  // participating farm has accepted, the other has not, so the pack is NOT yet
+  // publishable (the admin review/pack screens show the pending acceptance). ---
+  const entrecotOffers = await prisma.farmProductOffer.findMany({
+    where: { publicName: "Entrecot" },
+    take: 2,
+  });
+  if (entrecotOffers.length === 2) {
+    const mfPack = await prisma.pack.create({
+      data: {
+        isMultiFarm: true,
+        publicName: "Pack dues granges · Tast creuat",
+        description:
+          "Un pack que combina talls de dues granges. Requereix l'acceptació de totes dues granges abans de publicar-se.",
+        priceAmountCents: 8900,
+        lifecycle: "draft",
+        isApproved: false,
+        isActive: false,
+      },
+    });
+    for (const o of entrecotOffers) {
+      await prisma.packItemV2.create({
+        data: {
+          packId: mfPack.id,
+          farmProductOfferId: o.id,
+          farmId: o.farmId,
+          quantity: 1,
+        },
+      });
+    }
+    // Seed acceptance rows: first farm accepted, second pending.
+    await prisma.packFarmAcceptance.create({
+      data: {
+        packId: mfPack.id,
+        farmId: entrecotOffers[0].farmId,
+        accepted: true,
+        acceptedAt: new Date(),
+      },
+    });
+    await prisma.packFarmAcceptance.create({
+      data: { packId: mfPack.id, farmId: entrecotOffers[1].farmId, accepted: false },
+    });
+    console.log(
+      "  ✓ Multi-farm pack seeded (1 farm accepted, 1 pending) to demo dual-accept.",
+    );
+  }
+
+  // --- A seeded approved certification (public) + a pending one (not public). -
+  if (allFarms.length > 0) {
+    await prisma.farmCertification.create({
+      data: {
+        farmId: allFarms[0].id,
+        type: "welfare",
+        title: "Benestar animal certificat",
+        body: "Explotació en extensiu amb pastura pròpia.",
+        evidenceRef: "file://seed/welfare.pdf",
+        status: "approved",
+        approvedAt: new Date(),
+      },
+    });
+    await prisma.farmCertification.create({
+      data: {
+        farmId: allFarms[0].id,
+        type: "organic",
+        title: "Certificació ecològica (pendent)",
+        body: "Sol·licitud en revisió; no s'ha de mostrar públicament.",
+        evidenceRef: "file://seed/organic.pdf",
+        status: "pending_review",
+      },
+    });
+    console.log("  ✓ Certifications seeded (1 approved public, 1 pending not public).");
+  }
+
+  // --- M5: order enrichment backfill (no orders in the seed yet, but run the
+  // gate so the pipeline is proven and future orders are handled). -------------
+  const totalsBefore = new Map(
+    (await prisma.order.findMany({ select: { id: true, totalCents: true } })).map(
+      (o) => [o.id, o.totalCents],
+    ),
+  );
+  const orderBackfill = await backfillOrders(prisma);
+  await verifyOrderTotalsUnchanged(prisma, totalsBefore);
+  console.log(
+    `  ✓ Order backfill (M5): ${orderBackfill.openOrders} open backfilled, ${orderBackfill.historicalUntouched} historical untouched, totals unchanged.`,
   );
 
   console.log(

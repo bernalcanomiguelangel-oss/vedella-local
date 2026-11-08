@@ -19,7 +19,26 @@ export type AdminAction =
   | "translate_request"
   | "create_user"
   | "assign_role"
-  | "assign_farm";
+  | "assign_farm"
+  // FEAT-004 human actions.
+  | "offer_self_edit"
+  | "offer_submit_review"
+  | "offer_create_pending"
+  | "profile_submit_review"
+  | "profile_approve"
+  | "profile_reject"
+  | "cert_submit"
+  | "cert_approve"
+  | "cert_reject"
+  | "lot_create_pending"
+  | "lot_create"
+  | "pack_create"
+  | "pack_accept"
+  | "pack_decline"
+  | "pack_publish"
+  | "cycle_transition"
+  | "cycle_add_farm"
+  | "cycle_remove_farm";
 
 export interface AdminAuditInput {
   actor: SessionUser;

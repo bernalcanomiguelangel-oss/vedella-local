@@ -67,14 +67,98 @@ model Farm {
   isActive    Boolean   @default(false)
   isTest      Boolean   @default(false)
 
+  // --- Structured rich farm-profile fields (decision 3 / FEAT-004). ---------
+  // These restore the Lovable farm page's storytelling/traceability sections as
+  // editable, structured data. All are nullable and additive: historical farms
+  // keep working. Edits by a farm_manager are SUBMITTED to review (a
+  // FarmProfileEdit row), never applied live; only platform_admin edits the
+  // "other information" directly.
+  productionMethod   String? // e.g. extensiu, cicle tancat
+  traceabilityInfo   String? // how the farm traces granja -> lot -> tall -> paquet
+  welfareInfo        String? // animal welfare notes
+  feedInfo           String? // feeding / pasture notes
+  locationDetail     String? // detailed location / address text
+  latitude           Float?
+  longitude          Float?
+  heroImageRef       String? // stored image reference (not a secret)
+  galleryRefs        String? // JSON array of image references
+  contactEmail       String?
+  contactPhone       String?
+  websiteUrl         String?
+  // "Other information" is platform-admin-only free text (never editable by a
+  // farm_manager, even through review).
+  otherInformation   String?
+
   manager   User?  @relation("FarmManager")
 
   products Product[]
   offers   FarmProductOffer[]
   lots     Lot[]
+  certifications FarmCertification[]
+  profileEdits   FarmProfileEdit[]
+  packs          Pack[]
+  packItemsV2    PackItemV2[]
+  packAcceptances PackFarmAcceptance[]
+  cycleParticipations CycleFarm[]
+  cycleOfferAvailability CycleOfferAvailability[]
+  fulfilmentGroups FulfilmentGroup[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Rich farm profile: certifications + review-gated profile edits (FEAT-004,
+// decision 3 + rules B/C).
+//
+// A FarmCertification is an UNVERIFIED claim until a platform_admin approves it.
+// Unverified claims must NEVER be exposed to any public read path. The
+// submitter attaches an evidence reference (a stored file ref, never inline
+// secrets). Only status=approved rows are public.
+// ---------------------------------------------------------------------------
+model FarmCertification {
+  id              String  @id @default(cuid())
+  farm            Farm    @relation(fields: [farmId], references: [id])
+  farmId          String
+  type            String // e.g. "IGP", "organic", "welfare", "breed"
+  title           String
+  body            String  @default("")
+  evidenceRef     String? // reference to an uploaded evidence file (not public until approved)
+  // draft | pending_review | approved | rejected
+  status          String  @default("draft")
+  submittedByUserId String?
+  approvedByUserId  String?
+  approvedAt      DateTime?
+  rejectionReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+  @@index([status])
+}
+
+// A profile edit submitted by a farm_manager, awaiting platform_admin approval.
+// The proposed changes are stored as a JSON patch in `changes`; they are only
+// applied to the Farm row when a platform_admin approves the edit.
+model FarmProfileEdit {
+  id              String  @id @default(cuid())
+  farm            Farm    @relation(fields: [farmId], references: [id])
+  farmId          String
+  // JSON object of { field: newValue } proposed by the farm_manager.
+  changes         String
+  // pending_review | approved | rejected
+  status          String  @default("pending_review")
+  submittedByUserId String?
+  approvedByUserId  String?
+  approvedAt      DateTime?
+  rejectionReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+  @@index([status])
 }
 
 model Product {
@@ -179,6 +263,9 @@ model FarmProductOffer {
   isTest     Boolean   @default(false)
 
   lots Lot[]
+  packItems PackItemV2[]
+  orderItems OrderItem[]
+  cycleOfferAvailability CycleOfferAvailability[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -200,6 +287,80 @@ model PackItem {
 
   @@unique([packProductId, cutProductId])
   @@index([packProductId])
+}
+
+// ---------------------------------------------------------------------------
+// Pack model V2 (FEAT-004): curated bundle built from FarmProductOffers, which
+// may span MULTIPLE farms. A multi-farm pack (isMultiFarm) can only go live
+// after EVERY participating farm has accepted (PackFarmAcceptance.accepted).
+// A single-farm pack may publish without the dual-accept step. The publish
+// gate also requires all referenced offers to be approved+active.
+// ---------------------------------------------------------------------------
+model Pack {
+  id          String  @id @default(cuid())
+  // Owning farm for single-farm packs; null for a multi-farm pack created by
+  // the platform. isMultiFarm is the authoritative flag.
+  farm        Farm?   @relation(fields: [farmId], references: [id])
+  farmId      String?
+  isMultiFarm Boolean @default(false)
+  publicName  String
+  description String  @default("")
+  priceAmountCents Int @default(0)
+
+  lifecycle  String  @default("draft") // Lifecycle enum, see header
+  isApproved Boolean @default(false)
+  isActive   Boolean @default(false)
+  isTest     Boolean @default(false)
+
+  items       PackItemV2[]
+  acceptances PackFarmAcceptance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+}
+
+// A composition line of a Pack. Preserves item-level farm + lot traceability so
+// a multi-farm pack records which farm/offer/lot each included item came from.
+model PackItemV2 {
+  id                 String           @id @default(cuid())
+  pack               Pack             @relation(fields: [packId], references: [id], onDelete: Cascade)
+  packId             String
+  offer              FarmProductOffer @relation(fields: [farmProductOfferId], references: [id])
+  farmProductOfferId String
+  farm               Farm             @relation(fields: [farmId], references: [id])
+  farmId             String
+  lot                Lot?             @relation(fields: [lotId], references: [id])
+  lotId              String?
+  quantity           Int              @default(1)
+
+  @@index([packId])
+  @@index([farmProductOfferId])
+  @@index([farmId])
+}
+
+// Per-farm acceptance of participation in a (multi-farm) pack. A multi-farm
+// pack requires accepted=true for EVERY participating farm before going live.
+// Only that farm's manager (or platform_admin acting WITHOUT forcing) sets its
+// own acceptance; a platform_admin can NEVER force another farm's acceptance.
+model PackFarmAcceptance {
+  id               String   @id @default(cuid())
+  pack             Pack     @relation(fields: [packId], references: [id], onDelete: Cascade)
+  packId           String
+  farm             Farm     @relation(fields: [farmId], references: [id])
+  farmId           String
+  accepted         Boolean  @default(false)
+  acceptedByUserId String?
+  acceptedAt       DateTime?
+  declinedReason   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([packId, farmId])
+  @@index([packId])
+  @@index([farmId])
 }
 
 model Lot {
@@ -227,6 +388,9 @@ model Lot {
   packingDate   DateTime
   expiryDate    DateTime
 
+  packItems     PackItemV2[]
+  cycleOfferAvailability CycleOfferAvailability[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -247,10 +411,64 @@ model ReservationCycle {
   isActive     Boolean  @default(false)
   isTest       Boolean  @default(false)
 
+  // --- Enrichment (FEAT-004 / M6). All nullable, additive. The legacy
+  // closeDate/deliveryDate/totalPlaces/freePlaces columns are preserved. ------
+  internalName     String?
+  publicTitle      String?
+  // draft | open | closed | fulfilling | fulfilled | cancelled | archived
+  status           String?  @default("open")
+  openAt           DateTime?
+  closeAt          DateTime? // precise reservation-close timestamp (blocks after)
+  pickupDate       DateTime?
+  deliveryPriceCents Int?
+
   orders Order[]
+  farms  CycleFarm[]
+  offerAvailability CycleOfferAvailability[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Participating farms in a cycle, with per-farm capacity allocation.
+model CycleFarm {
+  id               String           @id @default(cuid())
+  cycle            ReservationCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  cycleId          String
+  farm             Farm             @relation(fields: [farmId], references: [id])
+  farmId           String
+  allocatedPlaces  Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cycleId, farmId])
+  @@index([cycleId])
+  @@index([farmId])
+}
+
+// Which offers are usable (have an eligible lot) within a cycle. Populated by
+// the seed/backfill (M6) from offers that have a non-withdrawn, in-stock lot.
+model CycleOfferAvailability {
+  id                 String           @id @default(cuid())
+  cycle              ReservationCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  cycleId            String
+  offer              FarmProductOffer @relation(fields: [farmProductOfferId], references: [id])
+  farmProductOfferId String
+  farm               Farm             @relation(fields: [farmId], references: [id])
+  farmId             String
+  // The eligible lot backing this offer in the cycle (null when none found).
+  lot                Lot?             @relation(fields: [lotId], references: [id])
+  lotId              String?
+  // True when an eligible lot was found; false flags an offer without stock.
+  hasEligibleLot     Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cycleId, farmProductOfferId])
+  @@index([cycleId])
+  @@index([farmId])
 }
 
 model Order {
@@ -261,6 +479,8 @@ model Order {
   customerId            String?
   // Snapshot of a representative lot reference printed on the order (R7).
   lotReferenceSnapshot  String   @default("")
+  // Historical orders keep the existing default; the expanded enum documents
+  // the fuller set: reserved | confirmed | fulfilling | fulfilled | cancelled.
   status                String   @default("reserved")
   subtotalCents         Int      @default(0)
   discountCents         Int      @default(0)
@@ -268,12 +488,42 @@ model Order {
   totalCents            Int      @default(0)
   isTest                Boolean  @default(false)
 
+  // --- Enrichment (FEAT-004 / M5). All nullable, additive. Historical orders
+  // keep null here and remain valid; totals are untouched. --------------------
+  attributionChannel   String?
+  attributionCampaign  String?
+  promisedDeliveryDate DateTime?
+  deliveryMethod       String? // delivery | pickup
+  isPickup             Boolean?  @default(false)
+  pickupLocation       String?
+
   items OrderItem[]
+  fulfilmentGroups FulfilmentGroup[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([cycleId])
+}
+
+// Farm-level slice of a (possibly multi-farm) order. Each participating farm
+// sees ONLY its own FulfilmentGroup, so a multi-farm order is split by farm.
+model FulfilmentGroup {
+  id        String   @id @default(cuid())
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId   String
+  farm      Farm     @relation(fields: [farmId], references: [id])
+  farmId    String
+  // pending | preparing | ready | delivered | cancelled
+  status    String   @default("pending")
+  subtotalCents Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orderId, farmId])
+  @@index([orderId])
+  @@index([farmId])
 }
 
 model OrderItem {
@@ -287,7 +537,19 @@ model OrderItem {
   lotReferenceSnapshot String @default("")
   quantity     Int    @default(1)
 
+  // --- Enrichment (FEAT-004 / M5). All nullable, additive. Historical items
+  // keep their text snapshots with null FKs (R14); open orders get backfilled. -
+  offer              FarmProductOffer? @relation(fields: [farmProductOfferId], references: [id])
+  farmProductOfferId String?
+  farmId             String?
+  productDefinitionId String?
+  actualWeightG      Int?
+  // Extended snapshot facts preserved at reservation time.
+  farmNameSnapshot   String?
+  definitionNameSnapshot String?
+
   @@index([orderId])
+  @@index([farmProductOfferId])
 }
 
 model Translation {
