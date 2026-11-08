@@ -36,6 +36,12 @@ export interface SessionUser {
   role: Role;
   /** The farm this user manages (farm_manager only); null otherwise. */
   farmId: string | null;
+  /**
+   * When true the user signed in with a temporary password and must change it
+   * before reaching any protected page. The change-password route is the only
+   * place they may go until this clears.
+   */
+  mustChangePassword: boolean;
 }
 
 function normaliseRole(role: string): Role {
@@ -60,8 +66,13 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     name: user.name,
     role: normaliseRole(user.role),
     farmId: user.farmId,
+    mustChangePassword: user.mustChangePassword,
   };
 }
+
+/** Path of the forced password-change page (the only protected route reachable
+ * while mustChangePassword is true). */
+export const CHANGE_PASSWORD_PATH = "/admin/change-password";
 
 /** True when the role may enter the admin area at all (not a customer). */
 export function isAdminRole(role: Role): boolean {
@@ -89,6 +100,23 @@ export async function getApiAdmin(): Promise<SessionUser | null> {
  * page. Returns the authenticated admin user on success.
  */
 export async function requireAdmin(): Promise<SessionUser> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/admin/login");
+  if (!isAdminRole(user.role)) redirect("/admin/denied");
+  // A user carrying a temporary password is not yet fully authenticated for
+  // protected pages: force the change-password flow first. The change-password
+  // route itself calls `requireSession` (below), not `requireAdmin`, so it is
+  // still reachable.
+  if (user.mustChangePassword) redirect(CHANGE_PASSWORD_PATH);
+  return user;
+}
+
+/**
+ * Resolve the signed-in user for the change-password flow itself. Requires a
+ * session and an admin role but does NOT redirect on mustChangePassword (that is
+ * exactly the state this page exists to resolve). A customer is still denied.
+ */
+export async function requireSession(): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/admin/login");
   if (!isAdminRole(user.role)) redirect("/admin/denied");

@@ -44,6 +44,32 @@ npm run dev
 The app runs end-to-end with **no API key**. A real AI provider is only used when
 `AI_API_KEY` is set *and* the relevant feature flag is enabled.
 
+## Authentication & passwords
+
+Admin access uses real **email + password** login. Passwords are stored only as
+salted hashes and are never logged or returned.
+
+- **Hashing library: [`bcryptjs`](https://www.npmjs.com/package/bcryptjs).** It is
+  a pure-JavaScript bcrypt implementation, so it installs from npm with **no
+  native build step** and works offline. This matters because the project must
+  build and test without a guaranteed native-compile toolchain or external
+  network access; native bindings such as `bcrypt`/`argon2` were avoided for that
+  reason. Hashing lives in `src/lib/password.ts` (`hashPassword`,
+  `verifyPassword`, `validatePasswordPolicy`).
+- **Main admin.** The seed creates `miguel@admin.com` as a `platform_admin` with a
+  **temporary** password and `mustChangePassword=true`, so the account is forced
+  through the change-password flow before any admin page is reachable. The
+  temporary value is read from `SEED_ADMIN_TEMP_PASSWORD` (see `.env.example`),
+  falling back to a documented **non-secret** development default. No real
+  password is ever hardcoded or logged.
+- **Forced change on first login.** Every seeded identity starts with
+  `mustChangePassword=true`; `requireAdmin` redirects such a user to
+  `/admin/change-password` until they set their own password.
+- **New users default to `customer`** and are never auto-promoted; only a
+  `platform_admin` can create users or assign the `platform_admin` role
+  (`src/lib/admin/users-actions.ts`), and every such action is written to the
+  `AdminAudit` log.
+
 ## Scripts
 
 | Script             | Description                                      |
@@ -75,7 +101,8 @@ src/
   app/
     [locale]/            Public marketplace (ca default, es, en) — homepage, farm
                          pages, search, basket, reservation confirmation.
-    admin/               Role-gated admin area: login (dev session), review queue,
+    admin/               Role-gated admin area: email+password login, forced
+                         change-password flow, review queue,
                          records/lifecycle, metrics dashboard, receipt ingestion.
     api/
       ai/{translate,receipt,metrics}/  Server-side AI endpoints (admin-gated).

@@ -16,7 +16,10 @@ export type AdminAction =
   | "reject_translation"
   | "receipt_prefill_create"
   | "run_metrics"
-  | "translate_request";
+  | "translate_request"
+  | "create_user"
+  | "assign_role"
+  | "assign_farm";
 
 export interface AdminAuditInput {
   actor: SessionUser;

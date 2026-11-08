@@ -36,6 +36,14 @@ model User {
   email     String   @unique
   name      String?
   role      String   @default("customer") // Role enum, see header
+  // Salted bcrypt hash (nullable so pre-auth/legacy identities still resolve).
+  // Plaintext passwords are NEVER stored.
+  passwordHash String?
+  // When true the user must change their password before reaching any protected
+  // page (e.g. the seeded main admin starts with a temporary password).
+  mustChangePassword Boolean @default(false)
+  // Last successful login timestamp (set by the login action).
+  lastLoginAt DateTime?
   // A farm_manager is linked to the farm they manage (one farm -> one manager).
   farm      Farm?    @relation("FarmManager", fields: [farmId], references: [id])
   farmId    String?  @unique

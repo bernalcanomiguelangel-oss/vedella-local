@@ -10,8 +10,22 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { validateLot } from "../src/lib/validateLot";
+import { hashPassword } from "../src/lib/password";
 
 const prisma = new PrismaClient();
+
+// Temporary seed password for every seeded identity (including the main admin).
+// Sourced from an env var so a deployment can override it; otherwise a clearly
+// NON-SECRET, documented development default is used. Because this is a known,
+// shared temporary value, EVERY seeded user starts with mustChangePassword=true
+// and must set their own password on first login. The raw value is NEVER logged.
+const SEED_TEMP_PASSWORD =
+  process.env.SEED_ADMIN_TEMP_PASSWORD?.trim() || "ChangeMe123!";
+
+// Main admin (the platform owner). New farms can be registered only by this
+// account. Created with a temporary password and forced to change it on first
+// login (the shared password is treated as compromised).
+const MAIN_ADMIN_EMAIL = "miguel@admin.com";
 
 // --- Pack base prices (cents) -------------------------------------------------
 const PACK_PRICES = {
@@ -223,14 +237,32 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.farm.deleteMany();
 
-  // Platform-wide users: one platform_admin (manages the whole marketplace) and
-  // one customer (browses/reserves). A farm_manager per farm is created below.
-  // These seeded identities drive the dev login/role selector in /admin.
+  // Every seeded identity gets the shared TEMPORARY password hash and must
+  // change it on first login (mustChangePassword=true). The hash is salted; the
+  // raw value is never stored or logged.
+  const tempHash = await hashPassword(SEED_TEMP_PASSWORD);
+
+  // The MAIN ADMIN (platform owner). Only this account can register new farms.
+  await prisma.user.create({
+    data: {
+      email: MAIN_ADMIN_EMAIL,
+      name: "Miguel — administració principal",
+      role: "platform_admin",
+      passwordHash: tempHash,
+      mustChangePassword: true,
+    },
+  });
+
+  // Platform-wide demo users: one platform_admin (manages the whole
+  // marketplace) and one customer (browses/reserves). A farm_manager per farm is
+  // created below. These seeded identities let the demo exercise each role.
   await prisma.user.create({
     data: {
       email: "admin@vedellalocal.example",
       name: "Plataforma — administració",
       role: "platform_admin",
+      passwordHash: tempHash,
+      mustChangePassword: true,
     },
   });
   await prisma.user.create({
@@ -238,6 +270,8 @@ async function main() {
       email: "client@vedellalocal.example",
       name: "Client de prova",
       role: "customer",
+      passwordHash: tempHash,
+      mustChangePassword: true,
     },
   });
 
@@ -253,6 +287,8 @@ async function main() {
         email: `manager@${f.slug}.example`,
         name: `${f.name} — gestor`,
         role: "farm_manager",
+        passwordHash: tempHash,
+        mustChangePassword: true,
       },
     });
 
@@ -528,6 +564,9 @@ async function main() {
   });
 
   console.log("  ✓ Active cycle: Cicle novembre 2026 (37/50 places free).");
+  console.log(
+    `  ✓ Main admin ${MAIN_ADMIN_EMAIL} created with a TEMPORARY password (must change on first login).`,
+  );
   console.log("Seed complete.");
 }
 
