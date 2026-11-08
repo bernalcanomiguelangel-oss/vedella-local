@@ -31,6 +31,8 @@ export function AddToBasketButton({
     <button
       type="button"
       onClick={onClick}
+      data-testid="add-to-basket"
+      data-product-id={item.productId}
       className={`mt-3 w-full rounded-full px-4 py-2 text-sm font-semibold transition ${
         added
           ? "bg-pasture-600 text-cream-50"

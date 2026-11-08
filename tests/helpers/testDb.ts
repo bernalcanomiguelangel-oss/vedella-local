@@ -7,13 +7,55 @@
  * SQL, so we add the CHECKs explicitly after pushing).
  */
 import { execSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, openSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
+
+// Cross-file lock for the schema push. Vitest runs test files in parallel
+// workers; concurrent `prisma db push` invocations share Prisma's engine/
+// migration state and collide ("table or index Lot already exists"). An
+// exclusive lock file serialises the push so each temp DB is created cleanly.
+const LOCK_PATH = join(tmpdir(), "vedella-dbpush.lock");
+
+function acquirePushLock(): () => void {
+  const deadline = Date.now() + 60_000;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const fd = openSync(LOCK_PATH, "wx"); // fails if the lock already exists
+      return () => {
+        try {
+          closeSync(fd);
+        } catch {
+          /* ignore */
+        }
+        try {
+          rmSync(LOCK_PATH, { force: true });
+        } catch {
+          /* ignore */
+        }
+      };
+    } catch {
+      if (Date.now() > deadline) {
+        // Stale lock: break it and retry.
+        try {
+          rmSync(LOCK_PATH, { force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+      // Busy-wait briefly (synchronous context in setup).
+      const until = Date.now() + 25;
+      while (Date.now() < until) {
+        /* spin */
+      }
+    }
+  }
+}
 
 export interface TestDb {
   prisma: PrismaClient;
@@ -25,12 +67,17 @@ export async function createTestDb(): Promise<TestDb> {
   const dbPath = join(dir, "test.db");
   const url = `file:${dbPath}`;
 
-  // Apply the Prisma schema to the fresh database.
-  execSync("npx prisma db push --skip-generate --accept-data-loss", {
-    cwd: projectRoot,
-    env: { ...process.env, DATABASE_URL: url },
-    stdio: "ignore",
-  });
+  // Apply the Prisma schema to the fresh database (serialised across workers).
+  const release = acquirePushLock();
+  try {
+    execSync("npx prisma db push --skip-generate --accept-data-loss", {
+      cwd: projectRoot,
+      env: { ...process.env, DATABASE_URL: url },
+      stdio: "ignore",
+    });
+  } finally {
+    release();
+  }
 
   const prisma = new PrismaClient({ datasources: { db: { url } } });
 

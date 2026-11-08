@@ -36,7 +36,11 @@ export function CutCard({
   strings: ProductStrings;
 }) {
   return (
-    <div className="flex flex-col rounded-2xl bg-cream-50 p-5 shadow-sm ring-1 ring-pasture-100">
+    <div
+      data-testid="cut-card"
+      data-product-name={cut.name}
+      className="flex flex-col rounded-2xl bg-cream-50 p-5 shadow-sm ring-1 ring-pasture-100"
+    >
       <div className="flex items-start justify-between gap-2">
         <h4 className="font-bold text-pasture-900">{cut.name}</h4>
         <span className="rounded-full bg-beef-50 px-2.5 py-1 text-sm font-bold text-beef-700">
@@ -87,7 +91,11 @@ export function PackCard({
   strings: ProductStrings;
 }) {
   return (
-    <div className="flex flex-col rounded-2xl bg-gradient-to-b from-cream-50 to-cream-100 p-5 shadow-md ring-1 ring-pasture-200">
+    <div
+      data-testid="pack-card"
+      data-product-name={pack.name}
+      className="flex flex-col rounded-2xl bg-gradient-to-b from-cream-50 to-cream-100 p-5 shadow-md ring-1 ring-pasture-200"
+    >
       <div className="flex items-start justify-between gap-2">
         <h4 className="text-lg font-bold text-pasture-900">{pack.name}</h4>
         <span className="rounded-full bg-beef-600 px-3 py-1 text-sm font-bold text-cream-50 shadow">

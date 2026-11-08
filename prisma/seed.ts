@@ -223,6 +223,24 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.farm.deleteMany();
 
+  // Platform-wide users: one platform_admin (manages the whole marketplace) and
+  // one customer (browses/reserves). A farm_manager per farm is created below.
+  // These seeded identities drive the dev login/role selector in /admin.
+  await prisma.user.create({
+    data: {
+      email: "admin@vedellalocal.example",
+      name: "Plataforma — administració",
+      role: "platform_admin",
+    },
+  });
+  await prisma.user.create({
+    data: {
+      email: "client@vedellalocal.example",
+      name: "Client de prova",
+      role: "customer",
+    },
+  });
+
   const seenReferences = new Set<string>();
   let lotCounter = 0;
 
@@ -387,6 +405,51 @@ async function main() {
       seenReferences.add(reference);
       await prisma.lot.create({
         data: { ...withdrawnLot, isWithdrawn: true, isTest: false },
+      });
+    }
+
+    // A product awaiting human review (lifecycle = pending_review, not yet
+    // approved/active) seeded on the first farm. It must NOT appear publicly
+    // until a platform_admin approves + activates it in /admin/review. It is
+    // backed by a usable lot so that, once approved+active, it is immediately
+    // offerable. This gives the admin approval e2e flow a concrete record.
+    if (fi === 0) {
+      const pendingProduct = await prisma.product.create({
+        data: {
+          farmId: farm.id,
+          kind: "cut",
+          name: "Secret de vedella",
+          description:
+            "Peça jugosa i melosa, pendent de revisió per la plataforma.",
+          basePriceCents: 1320,
+          weight: "≈ 300 g",
+          thickness: "2 cm",
+          maturation: "15 dies",
+          packaging: "Envasat al buit",
+          shelfLife: "9 dies en fred (0–4 °C)",
+          lifecycle: "pending_review",
+          isApproved: false,
+          isActive: false,
+          isTest: false,
+        },
+      });
+      lotCounter++;
+      const reference = `${f.slug.toUpperCase().slice(0, 3)}-PND-${String(lotCounter).padStart(4, "0")}`;
+      const dates = lotDates(4);
+      const pendingLot = {
+        farmId: farm.id,
+        productId: pendingProduct.id,
+        reference,
+        units: 12,
+        ...dates,
+      };
+      validateLot(pendingLot, {
+        product: { id: pendingProduct.id, farmId: farm.id },
+        existingReferences: seenReferences,
+      });
+      seenReferences.add(reference);
+      await prisma.lot.create({
+        data: { ...pendingLot, isWithdrawn: false, isTest: false },
       });
     }
 

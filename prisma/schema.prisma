@@ -224,6 +224,28 @@ model AiRun {
   @@index([useCase])
 }
 
+// Audit trail for HUMAN admin actions (lifecycle transitions, approvals,
+// rejections, receipt-driven creations). This is distinct from AiRun, which
+// audits AI runs. Every human transition writes one row here so there is a
+// durable, queryable record of who changed what (ai-guardrails: approvals and
+// lifecycle changes are human-only and must be audited).
+model AdminAudit {
+  id         String   @id @default(cuid())
+  actorId    String // User.id of the human who performed the action
+  actorEmail String   @default("")
+  actorRole  String   @default("")
+  action     String // e.g. "lifecycle_transition" | "approve_translation" | "reject_translation" | "receipt_prefill_create"
+  entityType String // "farm" | "product" | "translation" | "lot" ...
+  entityId   String
+  fromState  String   @default("")
+  toState    String   @default("")
+  detail     String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
+
 model MarketPriceSnapshot {
   id            String   @id @default(cuid())
   cutName       String
