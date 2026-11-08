@@ -38,7 +38,14 @@ export type AdminAction =
   | "pack_publish"
   | "cycle_transition"
   | "cycle_add_farm"
-  | "cycle_remove_farm";
+  | "cycle_remove_farm"
+  // FEAT-006 human actions.
+  | "incident_create"
+  | "incident_update"
+  | "incident_withdraw_lot"
+  | "website_text_draft"
+  | "website_text_publish"
+  | "setting_update";
 
 export interface AdminAuditInput {
   actor: SessionUser;

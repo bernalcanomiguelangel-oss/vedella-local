@@ -381,6 +381,107 @@ export async function listPendingRecords(user: SessionUser): Promise<{
   return { farms, products };
 }
 
+// ---------------------------------------------------------------------------
+// FEAT-006: audit-log browser. Read-only, farm-scoped, filterable view over the
+// AdminAudit (human actions) and AiRun (AI runs) tables. The FEAT-007
+// AI-assistant decision history will slot in as a third source here: see the
+// `assistantDecisions` extension point below, which is tolerant of that table
+// being absent/empty for now.
+// ---------------------------------------------------------------------------
+
+export interface AuditEntryRow {
+  id: string;
+  /** "human" | "ai" | "assistant" — which log the row came from. */
+  source: "human" | "ai" | "assistant";
+  action: string;
+  actor: string;
+  entityType: string;
+  entityId: string;
+  detail: string;
+  createdAt: Date;
+}
+
+export interface AuditFilters {
+  source?: string; // human | ai | assistant | all
+  action?: string;
+  entityType?: string;
+}
+
+/**
+ * Browse the activity log. A platform_admin sees everything; a farm_manager
+ * sees only entries attributable to their own farm:
+ *  - AdminAudit rows they performed (actorId) OR that target their farm.
+ *  - AiRun rows are platform-level and are hidden from farm managers.
+ * The result is a merged, newest-first list the UI renders read-only.
+ */
+export async function listAuditEntries(
+  user: SessionUser,
+  filters: AuditFilters = {},
+): Promise<AuditEntryRow[]> {
+  const scope = visibleFarmScope(user);
+  const isPlatform = scope === null;
+  const wantSource = filters.source && filters.source !== "all" ? filters.source : null;
+
+  const entries: AuditEntryRow[] = [];
+
+  // --- Human actions (AdminAudit). -----------------------------------------
+  if (!wantSource || wantSource === "human") {
+    const where: Record<string, unknown> = {};
+    if (filters.action) where.action = filters.action;
+    if (filters.entityType) where.entityType = filters.entityType;
+    // Farm managers: restrict to their own actions (their farm's entries).
+    if (!isPlatform) where.actorId = user.id;
+    const rows = await prisma.adminAudit.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 300,
+    });
+    for (const r of rows) {
+      entries.push({
+        id: r.id,
+        source: "human",
+        action: r.action,
+        actor: r.actorEmail || r.actorId,
+        entityType: r.entityType,
+        entityId: r.entityId,
+        detail: r.detail,
+        createdAt: r.createdAt,
+      });
+    }
+  }
+
+  // --- AI runs (AiRun). Platform-level only; hidden from farm managers. -----
+  if ((!wantSource || wantSource === "ai") && isPlatform) {
+    const where: Record<string, unknown> = {};
+    if (filters.action) where.useCase = filters.action;
+    const rows = await prisma.aiRun.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 300,
+    });
+    for (const r of rows) {
+      entries.push({
+        id: r.id,
+        source: "ai",
+        action: `ai:${r.useCase}`,
+        actor: `${r.provider}/${r.model}`,
+        entityType: "ai_run",
+        entityId: r.inputRef,
+        detail: `outcome=${r.outcome} valid=${r.outputValid} flag=${r.flagEnabled}`,
+        createdAt: r.createdAt,
+      });
+    }
+  }
+
+  // --- AI-assistant decision history (FEAT-007). Extension point: the table
+  //     does not exist yet, so we add nothing here. When FEAT-007 lands its
+  //     model, map its rows into AuditEntryRow with source "assistant" and the
+  //     same farm-scoping rule. The UI already renders the "assistant" source.
+
+  entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return entries;
+}
+
 /**
  * Machine (AI) translations awaiting human review. A platform_admin approves or
  * rejects them. Scoped to the user's farms where the translation's entity is a

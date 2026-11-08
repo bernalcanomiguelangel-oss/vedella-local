@@ -17,6 +17,7 @@ import {
   backfillOrders,
   verifyOrderTotalsUnchanged,
 } from "../src/lib/migrate/backfill-orders";
+import { ensureDefaultSettings } from "../src/lib/admin/settings";
 
 const prisma = new PrismaClient();
 
@@ -869,6 +870,11 @@ async function main() {
   console.log(
     `  ✓ Main admin ${MAIN_ADMIN_EMAIL} created with a TEMPORARY password (must change on first login).`,
   );
+
+  // --- FEAT-006: default marketplace settings (no secrets). -------------------
+  await ensureDefaultSettings(prisma);
+  console.log("  ✓ Default settings seeded (no secret values).");
+
   console.log("Seed complete.");
 }
 

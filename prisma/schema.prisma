@@ -680,6 +680,91 @@ model InterestedContact {
   @@index([createdAt])
 }
 
+// ---------------------------------------------------------------------------
+// Operational / content / configuration tables (FEAT-006).
+//
+// Incident    : operational issue log linked to any structured record. Scoped
+//               by farm (a farm_manager sees only own-farm incidents).
+// WebsiteText : CMS for GENERIC copy only (ca/es/en), draft + published. It
+//               must NEVER hold operational facts (weights, prices, dates,
+//               capacity, farm/traceability data) — those come from structured
+//               records. The guardrail is enforced in src/lib/admin/website-text.
+// Setting     : marketplace configuration key/value with typed columns. It
+//               stores NO secret VALUES: AI/provider keys live only in the
+//               git-ignored .env and surface as presence-only booleans.
+// ---------------------------------------------------------------------------
+model Incident {
+  id                 String   @id @default(cuid())
+  reference          String   @unique
+  // delivery | complaint | quality | lot | logistics | other
+  category           String
+  // low | medium | high | critical
+  severity           String   @default("low")
+  description        String   @default("")
+  reportedAt         DateTime @default(now())
+  ownerUserId        String?
+  // open | investigating | resolved | closed
+  status             String   @default("open")
+  correctiveAction   String?
+  resolution         String?
+  resolvedAt         DateTime?
+
+  // Optional links to structured records (never free-text operational facts).
+  farmId              String?
+  productDefinitionId String?
+  farmProductOfferId  String?
+  lotId               String?
+  packId              String?
+  cycleId             String?
+  orderId             String?
+
+  isTest    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+  @@index([status])
+  @@index([lotId])
+}
+
+model WebsiteText {
+  id              String   @id @default(cuid())
+  pageKey         String
+  sectionKey      String
+  locale          String // ca | es | en
+  draftText       String   @default("")
+  publishedText   String?
+  charLimit       Int?
+  lastEditorUserId String?
+  lastPublishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pageKey, sectionKey, locale])
+  @@index([pageKey])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  // Exactly one typed column is used per row, selected by `valueType`.
+  valueType String   @default("string") // string | number | boolean | json
+  stringValue  String?
+  numberValue  Int?
+  booleanValue Boolean?
+  jsonValue    String?
+  // Human-facing grouping for the settings UI (identity | localization |
+  // delivery | cycles | notifications | features | ai | analytics).
+  category  String   @default("general")
+  label     String   @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}
+
 model MarketPriceSnapshot {
   id            String   @id @default(cuid())
   cutName       String
