@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { listAdminCycles } from "@/lib/admin/data";
 import { CycleRow } from "@/components/admin/CycleRow";
+import { AssistantPanel } from "@/components/admin/AssistantPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,22 @@ export default async function AdminCyclesPage() {
           <p className="text-sm text-bark-500">Cap cicle encara.</p>
         )}
       </div>
+
+      {/* Bounded AI assistant: drafts NON-BINDING suggestions for the next
+          cycle from the active cycle's real facts. It never sets capacity,
+          prices or dates; a human creates/edits the cycle and must accept/edit/
+          reject the suggestion with a reason. */}
+      {isPlatform && cycles[0] && (
+        <AssistantPanel
+          kind="cycleRecommendation"
+          title="Recomanacions de cicle (no vinculant)"
+          inputRef={`cycle:${cycles[0].id}`}
+          facts={{
+            name: cycles[0].publicTitle ?? cycles[0].name,
+            zone: cycles[0].zone,
+          }}
+        />
+      )}
     </div>
   );
 }

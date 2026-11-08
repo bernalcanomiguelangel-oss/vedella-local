@@ -6,6 +6,7 @@ import {
 } from "@/lib/admin/data";
 import { OfferSelfEditRow } from "@/components/admin/OfferSelfEditRow";
 import { PackAcceptPanel } from "@/components/admin/PackAcceptPanel";
+import { AssistantPanel } from "@/components/admin/AssistantPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -135,6 +136,21 @@ export default async function AdminProductsPage() {
           )}
         </div>
       </section>
+
+      {/* Bounded AI assistant: READ-ONLY comparison of offers for one
+          definition across farms. It never recommends or sets a price; a human
+          accepts/edits/rejects with a reason. */}
+      {isPlatform && groups[0] && (
+        <AssistantPanel
+          kind="offerCompare"
+          title="Comparativa d'ofertes (només lectura)"
+          inputRef={`definition:${groups[0].definitionId}`}
+          facts={{
+            definitionName: groups[0].definitionName,
+            offerCount: groups[0].offers.length,
+          }}
+        />
+      )}
     </div>
   );
 }

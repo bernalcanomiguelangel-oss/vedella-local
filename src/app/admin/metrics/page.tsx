@@ -10,6 +10,7 @@ import { CHANNELS } from "@/lib/analytics";
 import { formatCents } from "@/lib/pricing";
 import { BarChart } from "@/components/admin/BarChart";
 import { RunMetricsButton } from "@/components/admin/RunMetricsButton";
+import { AssistantPanel } from "@/components/admin/AssistantPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -445,6 +446,18 @@ export default async function AdminMetricsPage({
           </div>
         )}
       </section>
+
+      {/* Bounded AI assistant: narrates the server-computed weekly averages.
+          It never changes a number, sets a price, approves or publishes; a
+          human accepts/edits/rejects with a reason. */}
+      {isPlatform && (
+        <AssistantPanel
+          kind="metricsAnalyst"
+          title="Anàlisi de mètriques (setmana actual)"
+          inputRef={`metrics:${weekly.weekStart}`}
+          facts={{ weekStart: weekly.weekStart, cuts: weekly.perCut.length }}
+        />
+      )}
     </div>
   );
 }

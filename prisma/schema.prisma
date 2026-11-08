@@ -584,6 +584,52 @@ model AiRun {
   @@index([useCase])
 }
 
+// ---------------------------------------------------------------------------
+// AI-assistant decision history (FEAT-007). The five bounded in-panel
+// assistants (farmProfileDraft, offerCompare, traceabilityReview,
+// metricsAnalyst, cycleRecommendation) only ever DRAFT or SUGGEST. They never
+// price, approve, publish, or create traceability. For every suggestion a HUMAN
+// must record an explicit decision (accept | edit | reject) WITH a reason; this
+// table is that durable record and slots into the /admin/audit browser as the
+// "assistant" source.
+//
+// A row is linked to its AiRun (aiRunId) so prompt/model/version + input refs
+// are recoverable. `decision` + `decisionReason` are set by the human via a
+// server action — never by the model. This table NEVER carries a price,
+// approval, lifecycle or role field: the assistant output is stored as a JSON
+// suggestion blob that has already passed the Zod schema + guardrail filter.
+// ---------------------------------------------------------------------------
+model AiAssistantDecision {
+  id            String   @id @default(cuid())
+  // One of the five assistant use cases (enforced in src/lib/ai/assistants).
+  assistant     String
+  // Non-sensitive reference to what was analysed (e.g. "farm:123", "cycle:9").
+  inputRef      String   @default("")
+  // The guardrail-filtered, schema-valid suggestion the assistant produced,
+  // serialised as JSON. Contains NO price/approval/lifecycle/role field.
+  suggestionJson String  @default("")
+  // The linked AiRun capturing provider/model/promptVersion/flag state.
+  aiRunId       String?
+  // pending | accepted | edited | rejected. Starts "pending" until a human acts.
+  decision      String   @default("pending")
+  // The human's required reason for their accept/edit/reject decision.
+  decisionReason String  @default("")
+  // The human who decided (set by the server action; never the model).
+  decidedByUserId String?
+  decidedByEmail  String  @default("")
+  decidedAt       DateTime?
+  // Optional farm scope so the audit browser can apply the same farm-scoping
+  // rule as other sources (null = platform-level).
+  farmId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assistant])
+  @@index([farmId])
+  @@index([decision])
+}
+
 // Audit trail for HUMAN admin actions (lifecycle transitions, approvals,
 // rejections, receipt-driven creations). This is distinct from AiRun, which
 // audits AI runs. Every human transition writes one row here so there is a

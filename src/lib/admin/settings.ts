@@ -206,6 +206,38 @@ export function buildAiDiagnostics(env: NodeJS.ProcessEnv = process.env): AiDiag
         location: "/admin/receipts",
         flagEnabled: config.flags.receipt,
       },
+      // The five bounded in-panel assistants (FEAT-007, decision 7). Each only
+      // drafts/suggests; a human must accept/edit/reject with a reason.
+      {
+        useCase: "farmProfileDraft",
+        label: "Assistent: esborrany de perfil de granja",
+        location: "/admin/farms",
+        flagEnabled: config.flags.farmProfileDraft,
+      },
+      {
+        useCase: "offerCompare",
+        label: "Assistent: comparativa d'ofertes (només lectura)",
+        location: "/admin/products",
+        flagEnabled: config.flags.offerCompare,
+      },
+      {
+        useCase: "traceabilityReview",
+        label: "Assistent: revisió de traçabilitat",
+        location: "/admin/lots",
+        flagEnabled: config.flags.traceabilityReview,
+      },
+      {
+        useCase: "metricsAnalyst",
+        label: "Assistent: anàlisi de mètriques",
+        location: "/admin/metrics",
+        flagEnabled: config.flags.metricsAnalyst,
+      },
+      {
+        useCase: "cycleRecommendation",
+        label: "Assistent: recomanacions de cicle (no vinculant)",
+        location: "/admin/cycles",
+        flagEnabled: config.flags.cycleRecommendation,
+      },
     ],
     keyConfigLocation: "Fitxer .env (ignorat per git) a l'arrel del projecte",
     keyEnvVar: "AI_API_KEY",

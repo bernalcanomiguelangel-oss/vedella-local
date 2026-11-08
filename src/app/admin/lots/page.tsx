@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { listAdminLots, listAdminOffers } from "@/lib/admin/data";
 import { LotCreateForm } from "@/components/admin/LotCreateForm";
+import { AssistantPanel } from "@/components/admin/AssistantPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,23 @@ export default async function AdminLotsPage() {
           </tbody>
         </table>
       </section>
+
+      {/* Bounded AI assistant: reviews a Farm→Lot→Offer→Pack chain for gaps and
+          flags findings. It never creates or edits a traceability record; a
+          human accepts/edits/rejects with a reason. */}
+      {lots[0] && (
+        <AssistantPanel
+          kind="traceabilityReview"
+          title="Revisió de traçabilitat"
+          inputRef={`lot:${lots[0].reference}`}
+          facts={{
+            farmName: lots[0].farm.name,
+            lotReference: lots[0].reference,
+            offerName: lots[0].offer?.publicName ?? null,
+            packName: null,
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -620,6 +620,67 @@ async function main() {
     `  ✓ Cycle availability (M6): ${availability.eligible} offers with an eligible lot, ${availability.ineligible} without.`,
   );
 
+  // --- Single-farm Pack V2 rows mirroring the A/B/C compositions, built from
+  // each farm's own FarmProductOffers (FEAT-007 / M8). These let the offer-model
+  // public read path render packs with full item-level traceability, while the
+  // legacy Product packs stay untouched for the legacy path. Each pack pins each
+  // item to a usable lot so the public pack spec table + traceability resolve. -
+  for (const f of allFarms) {
+    if (f.isTest) continue;
+    const farmOffers = await prisma.farmProductOffer.findMany({
+      where: { farmId: f.id, isApproved: true, isActive: true, isTest: false },
+    });
+    const offerByName = new Map(farmOffers.map((o) => [o.publicName, o]));
+    for (const p of PACKS) {
+      const items = PACK_ITEMS[p.key]
+        .map((it) => {
+          const cut = CUTS.find((c) => c.key === it.cutKey);
+          const offer = cut ? offerByName.get(cut.name) : undefined;
+          return offer ? { offer, quantity: it.quantity } : null;
+        })
+        .filter((x): x is { offer: (typeof farmOffers)[number]; quantity: number } => !!x);
+      if (items.length !== PACK_ITEMS[p.key].length) continue; // skip incomplete
+      const v2 = await prisma.pack.create({
+        data: {
+          farmId: f.id,
+          isMultiFarm: false,
+          publicName: p.name,
+          description: p.description,
+          priceAmountCents: p.priceCents,
+          lifecycle: "active",
+          isApproved: true,
+          isActive: true,
+        },
+      });
+      for (const it of items) {
+        // Pin a usable lot for the offer so item-level traceability resolves.
+        const lot = await prisma.lot.findFirst({
+          where: {
+            farmProductOfferId: it.offer.id,
+            isWithdrawn: false,
+            isTest: false,
+            units: { gt: 0 },
+          },
+          orderBy: { expiryDate: "asc" },
+        });
+        await prisma.pack.update({
+          where: { id: v2.id },
+          data: {
+            items: {
+              create: {
+                farmProductOfferId: it.offer.id,
+                farmId: f.id,
+                lotId: lot?.id ?? null,
+                quantity: it.quantity,
+              },
+            },
+          },
+        });
+      }
+    }
+  }
+  console.log("  ✓ Single-farm Pack V2 rows seeded for the offer-model read path.");
+
   // --- A seeded multi-farm pack demonstrating the dual-accept workflow. One
   // participating farm has accepted, the other has not, so the pack is NOT yet
   // publishable (the admin review/pack screens show the pending acceptance). ---

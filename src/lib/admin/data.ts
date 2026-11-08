@@ -473,10 +473,41 @@ export async function listAuditEntries(
     }
   }
 
-  // --- AI-assistant decision history (FEAT-007). Extension point: the table
-  //     does not exist yet, so we add nothing here. When FEAT-007 lands its
-  //     model, map its rows into AuditEntryRow with source "assistant" and the
-  //     same farm-scoping rule. The UI already renders the "assistant" source.
+  // --- AI-assistant decision history (FEAT-007). Each row is a human decision
+  //     (accept/edit/reject + reason) over a bounded assistant suggestion. A
+  //     platform_admin sees all; a farm_manager sees only rows scoped to their
+  //     own farm (farmId). Platform-level rows (farmId null) are hidden from
+  //     farm managers, matching the AiRun rule.
+  if (!wantSource || wantSource === "assistant") {
+    const where: Record<string, unknown> = {};
+    if (filters.action) where.assistant = filters.action;
+    if (!isPlatform) {
+      // Farm managers: only their own farm's decisions (never platform-level).
+      if (scope === null || scope.length === 0) {
+        // no visible rows
+        where.id = "__none__";
+      } else {
+        where.farmId = { in: scope };
+      }
+    }
+    const rows = await prisma.aiAssistantDecision.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 300,
+    });
+    for (const r of rows) {
+      entries.push({
+        id: r.id,
+        source: "assistant",
+        action: `assistant:${r.assistant}`,
+        actor: r.decidedByEmail || (r.decision === "pending" ? "(pendent)" : r.decidedByUserId || ""),
+        entityType: "assistant_decision",
+        entityId: r.inputRef,
+        detail: `decision=${r.decision}${r.decisionReason ? ` reason=${r.decisionReason}` : ""}`,
+        createdAt: r.createdAt,
+      });
+    }
+  }
 
   entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   return entries;
@@ -522,6 +553,23 @@ export async function listPendingTranslations(
         farmName = product.farm.name;
         sourceText =
           (product as Record<string, unknown>)[r.field] as string | undefined ?? null;
+      } else {
+        // Offer-model (M8): a "product" translation may key on a
+        // FarmProductOffer id. Resolve the owning farm + source text from it so
+        // offer copy is reviewable through the same queue.
+        const offer = await prisma.farmProductOffer.findUnique({
+          where: { id: r.entityId },
+          include: { farm: true },
+        });
+        if (offer) {
+          farmId = offer.farmId;
+          farmName = offer.farm.name;
+          const map: Record<string, string> = {
+            name: offer.publicName,
+            description: offer.description,
+          };
+          sourceText = map[r.field] ?? null;
+        }
       }
     }
 

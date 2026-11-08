@@ -24,10 +24,28 @@ export async function applyLifecycleTransition(
   entityId: string,
   toState: string,
 ): Promise<CoreResult & { from?: string; to?: string }> {
-  const current =
-    entityType === "farm"
-      ? await db.farm.findUnique({ where: { id: entityId } })
-      : await db.product.findUnique({ where: { id: entityId } });
+  // entityType "product" resolves to either a legacy Product OR a
+  // FarmProductOffer (the review queue surfaces offers under the "product"
+  // type). We try Product first, then fall back to the offer so the offer-model
+  // approval path (M8) actually transitions the offer that the public read path
+  // renders. "farm" resolves to a Farm.
+  let current:
+    | { lifecycle: string; kind: "farm" | "product" | "offer" }
+    | null = null;
+  if (entityType === "farm") {
+    const farm = await db.farm.findUnique({ where: { id: entityId } });
+    current = farm ? { lifecycle: farm.lifecycle, kind: "farm" } : null;
+  } else {
+    const product = await db.product.findUnique({ where: { id: entityId } });
+    if (product) {
+      current = { lifecycle: product.lifecycle, kind: "product" };
+    } else {
+      const offer = await db.farmProductOffer.findUnique({
+        where: { id: entityId },
+      });
+      current = offer ? { lifecycle: offer.lifecycle, kind: "offer" } : null;
+    }
+  }
   if (!current) return { ok: false, code: "NOT_FOUND", message: "Record not found." };
 
   let flags;
@@ -45,8 +63,10 @@ export async function applyLifecycleTransition(
     isApproved: flags.isApproved,
     isActive: flags.isActive,
   };
-  if (entityType === "farm") {
+  if (current.kind === "farm") {
     await db.farm.update({ where: { id: entityId }, data });
+  } else if (current.kind === "offer") {
+    await db.farmProductOffer.update({ where: { id: entityId }, data });
   } else {
     await db.product.update({ where: { id: entityId }, data });
   }

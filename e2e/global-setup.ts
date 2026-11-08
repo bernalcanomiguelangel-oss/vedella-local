@@ -46,26 +46,28 @@ async function seedE2eAdmin() {
 async function seedMachineTranslation() {
   const prisma = new PrismaClient();
   try {
-    // Pick the seeded pending_review product to also exercise approval, and add
-    // a machine (AI) translation on an active product so the approve-translation
-    // flow has a concrete row to publish.
-    const product = await prisma.product.findFirst({
-      where: { name: "Entrecot", isActive: true },
+    // Add a machine (AI) translation on an active Entrecot OFFER so the
+    // approve-translation flow has a concrete row to publish through the
+    // offer-model public read path (M8 / FEAT-007). The public catalog renders
+    // offers, so the translation must key on the offer id (entityType
+    // "product", which the review + catalog paths resolve to an offer).
+    const offer = await prisma.farmProductOffer.findFirst({
+      where: { publicName: "Entrecot", isActive: true },
       orderBy: { createdAt: "asc" },
     });
-    if (product) {
+    if (offer) {
       await prisma.translation.upsert({
         where: {
           entityType_entityId_field_locale: {
             entityType: "product",
-            entityId: product.id,
+            entityId: offer.id,
             field: "name",
             locale: "en",
           },
         },
         create: {
           entityType: "product",
-          entityId: product.id,
+          entityId: offer.id,
           field: "name",
           locale: "en",
           text: "[EN] Ribeye steak (machine)",

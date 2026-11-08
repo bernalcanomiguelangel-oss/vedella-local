@@ -18,9 +18,38 @@ import type {
   ReceiptExtraction,
   TranslationResult,
   MetricsSummary,
+  FarmProfileDraft,
+  OfferCompare,
+  TraceabilityReview,
+  MetricsAnalyst,
+  CycleRecommendation,
 } from "./schemas";
 
-export type AiUseCase = "translate" | "metrics" | "receipt";
+/**
+ * The five bounded in-panel assistants (FEAT-007, decision 7). Each is a
+ * separate use case behind its own feature flag. They only draft/suggest; they
+ * never price, approve, publish or create traceability.
+ */
+export type AiAssistantUseCase =
+  | "farmProfileDraft"
+  | "offerCompare"
+  | "traceabilityReview"
+  | "metricsAnalyst"
+  | "cycleRecommendation";
+
+export type AiUseCase =
+  | "translate"
+  | "metrics"
+  | "receipt"
+  | AiAssistantUseCase;
+
+export const ASSISTANT_USE_CASES: AiAssistantUseCase[] = [
+  "farmProfileDraft",
+  "offerCompare",
+  "traceabilityReview",
+  "metricsAnalyst",
+  "cycleRecommendation",
+];
 
 // ---------------------------------------------------------------------------
 // Provider interface
@@ -56,6 +85,42 @@ export interface MetricsInput {
   perCut: { cutName: string; avgPriceCents: number; sampleCount: number }[];
 }
 
+// ---------------------------------------------------------------------------
+// Bounded-assistant inputs (FEAT-007). Every assistant receives ALREADY
+// server-resolved, structured FACTS plus an optional block of UNTRUSTED text
+// (free-form notes a human typed, or document text). The untrusted block is
+// wrapped as data (sanitize.ts) before any model sees it and can never change
+// application state.
+// ---------------------------------------------------------------------------
+
+export interface AssistantFacts {
+  /** Structured, trusted facts the server already resolved from the DB. */
+  facts: Record<string, string | number | null>;
+  /** Non-sensitive audit reference, e.g. "farm:123". */
+  inputRef: string;
+  /** Optional free-form text typed by the human. UNTRUSTED. */
+  untrustedNote?: string;
+}
+
+export interface OfferCompareFacts extends AssistantFacts {
+  definitionName: string;
+  offers: {
+    farmName: string;
+    offerName: string;
+    observedWeight: string | null;
+    observedMaturation: string | null;
+  }[];
+}
+
+export interface TraceabilityFacts extends AssistantFacts {
+  chain: {
+    farmName: string;
+    lotReference: string | null;
+    offerName: string | null;
+    packName: string | null;
+  };
+}
+
 /** The provider-agnostic AI boundary. Implementations must be side-effect free
  * with respect to application state (no DB writes, no approvals, no pricing). */
 export interface AiProvider {
@@ -66,6 +131,13 @@ export interface AiProvider {
   translate(input: TranslateInput): Promise<TranslationResult>;
   extractReceipt(input: ExtractReceiptInput): Promise<ReceiptExtraction>;
   summarizeMetrics(input: MetricsInput): Promise<MetricsSummary>;
+
+  // Bounded assistants (FEAT-007). Draft/suggest only.
+  draftFarmProfile(input: AssistantFacts): Promise<FarmProfileDraft>;
+  compareOffers(input: OfferCompareFacts): Promise<OfferCompare>;
+  reviewTraceability(input: TraceabilityFacts): Promise<TraceabilityReview>;
+  analyzeMetrics(input: MetricsInput): Promise<MetricsAnalyst>;
+  recommendCycle(input: AssistantFacts): Promise<CycleRecommendation>;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +153,12 @@ export interface AiConfig {
     translation: boolean;
     metrics: boolean;
     receipt: boolean;
+    // Bounded in-panel assistants (FEAT-007), each behind its own flag.
+    farmProfileDraft: boolean;
+    offerCompare: boolean;
+    traceabilityReview: boolean;
+    metricsAnalyst: boolean;
+    cycleRecommendation: boolean;
   };
 }
 
@@ -104,6 +182,11 @@ export function readAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
       translation: envFlag(env.AI_TRANSLATION_ENABLED),
       metrics: envFlag(env.AI_METRICS_ENABLED),
       receipt: envFlag(env.AI_RECEIPT_ENABLED),
+      farmProfileDraft: envFlag(env.AI_FARM_PROFILE_DRAFT_ENABLED),
+      offerCompare: envFlag(env.AI_OFFER_COMPARE_ENABLED),
+      traceabilityReview: envFlag(env.AI_TRACEABILITY_REVIEW_ENABLED),
+      metricsAnalyst: envFlag(env.AI_METRICS_ANALYST_ENABLED),
+      cycleRecommendation: envFlag(env.AI_CYCLE_RECOMMENDATION_ENABLED),
     },
   };
 }
@@ -117,6 +200,16 @@ export function flagForUseCase(config: AiConfig, useCase: AiUseCase): boolean {
       return config.flags.metrics;
     case "receipt":
       return config.flags.receipt;
+    case "farmProfileDraft":
+      return config.flags.farmProfileDraft;
+    case "offerCompare":
+      return config.flags.offerCompare;
+    case "traceabilityReview":
+      return config.flags.traceabilityReview;
+    case "metricsAnalyst":
+      return config.flags.metricsAnalyst;
+    case "cycleRecommendation":
+      return config.flags.cycleRecommendation;
   }
 }
 

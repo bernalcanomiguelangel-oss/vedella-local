@@ -47,9 +47,10 @@ test("platform_admin approves a pending product and it becomes visible", async (
   await lifecycleRow.getByTestId("to-active").click();
   await expect(lifecycleRow.getByTestId("current-state")).toHaveText("active");
 
-  // Now it is publicly visible on the farm page.
+  // Now it is publicly visible on the farm page (the dynamic traceability chain
+  // also lists the name, so match the first occurrence).
   await page.goto("/ca/farms/mas-vallgorguina");
-  await expect(page.getByText("Secret de vedella")).toBeVisible();
+  await expect(page.getByText("Secret de vedella").first()).toBeVisible();
 });
 
 test("platform_admin approves a machine translation and it publishes", async ({
@@ -69,7 +70,8 @@ test("platform_admin approves a machine translation and it publishes", async ({
   await expect(tr).toBeVisible();
   await tr.getByTestId("approve-translation").click();
 
-  // The approved translation now surfaces on the English farm page.
+  // The approved translation now surfaces on the English farm page (the dynamic
+  // traceability chain also lists the name, so match the first occurrence).
   await page.goto("/en/farms/mas-vallgorguina");
-  await expect(page.getByText(/Ribeye steak \(machine\)/)).toBeVisible();
+  await expect(page.getByText(/Ribeye steak \(machine\)/).first()).toBeVisible();
 });

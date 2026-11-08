@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { listAdminFarms, getAdminFarmDetail } from "@/lib/admin/data";
 import { FarmDetailPanel } from "@/components/admin/FarmDetailPanel";
+import { AssistantPanel } from "@/components/admin/AssistantPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -53,11 +54,21 @@ export default async function AdminFarmsPage({
 
         <div>
           {detail ? (
-            <FarmDetailPanel
-              role={user.role}
-              farm={JSON.parse(JSON.stringify(detail.farm))}
-              readiness={detail.readiness}
-            />
+            <>
+              <FarmDetailPanel
+                role={user.role}
+                farm={JSON.parse(JSON.stringify(detail.farm))}
+                readiness={detail.readiness}
+              />
+              {/* Bounded AI assistant: drafts profile copy from existing facts.
+                  It never prices/approves/publishes/creates traceability; a
+                  human accepts/edits/rejects with a reason. */}
+              <AssistantPanel
+                kind="farmProfileDraft"
+                title="Esborrany de perfil de granja"
+                farmId={detail.farm.id}
+              />
+            </>
           ) : (
             <p className="text-sm text-bark-500">Selecciona una granja.</p>
           )}

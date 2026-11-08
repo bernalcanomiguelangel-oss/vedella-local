@@ -68,6 +68,25 @@
     "success": "Great! We'll let you know when the next cycle opens.",
     "error": "We couldn't save your email. Please try again."
   },
+  "cycle": {
+    "title": "Active reservation cycle",
+    "zone": "Zone",
+    "method": "Method",
+    "methodDelivery": "Refrigerated delivery",
+    "methodDeliveryOrPickup": "Delivery or pickup",
+    "close": "Reservations close",
+    "delivery": "Expected delivery",
+    "pickup": "Pickup",
+    "deliveryPrice": "Delivery fee",
+    "places": "Free places",
+    "closesIn": "Closes in",
+    "closed": "Reservations closed",
+    "days": "d",
+    "hours": "h",
+    "minutes": "m",
+    "seconds": "s",
+    "none": "There is no open reservation cycle right now."
+  },
   "farm": {
     "backToMarket": "Back to the market",
     "foundedIn": "Since",
@@ -79,6 +98,8 @@
     "units": "u.",
     "traceability": "Traceability",
     "lot": "Lot",
+    "farmLabel": "Farm",
+    "multiFarm": "Multi-farm pack",
     "noProducts": "This farm has no published products yet."
   },
   "product": {
