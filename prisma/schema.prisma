@@ -1,0 +1,237 @@
+// Vedella Local — multi-farm traceable Catalan beef marketplace.
+// Data model per design.md section 3. Integrity enforced here (FKs, uniqueness,
+// non-null farmId) plus a shared src/lib/validateLot.ts guard and (where supported)
+// SQLite CHECK constraints via migration SQL for units>=0 and date ordering.
+//
+// NOTE: prices are stored as integer cents. Catalan is the default language.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enumerations.
+//
+// SQLite has no native enum support in Prisma, so enum-like fields are stored as
+// plain strings. The allowed values are documented here and enforced by Zod at
+// the application boundary.
+//
+//   Role:        platform_admin | farm_manager | customer
+//   ProductKind: pack | cut
+//   Lifecycle:   draft | pending_review | approved | active | inactive | rejected | archived
+//   TranslationStatus: machine | in_review | approved
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Core entities
+// ---------------------------------------------------------------------------
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      String   @default("customer") // Role enum, see header
+  // A farm_manager is linked to the farm they manage (one farm -> one manager).
+  farm      Farm?    @relation("FarmManager", fields: [farmId], references: [id])
+  farmId    String?  @unique
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Farm {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  town        String
+  comarca     String
+  breed       String
+  foundedYear Int
+  animalCount Int
+  story       String
+  lifecycle   String    @default("draft") // Lifecycle enum, see header
+  isApproved  Boolean   @default(false)
+  isActive    Boolean   @default(false)
+  isTest      Boolean   @default(false)
+
+  manager   User?  @relation("FarmManager")
+
+  products Product[]
+  lots     Lot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id            String      @id @default(cuid())
+  farm          Farm        @relation(fields: [farmId], references: [id])
+  farmId        String // required: every product belongs to a farm (R8)
+  kind          String // ProductKind enum: pack | cut (see header)
+  name          String
+  description   String      @default("")
+  basePriceCents Int
+
+  // Cut facts (nullable; mainly used for kind = cut)
+  weight     String?
+  thickness  String?
+  maturation String?
+  packaging  String?
+  shelfLife  String?
+
+  lifecycle  String    @default("draft") // Lifecycle enum, see header
+  isApproved Boolean   @default(false)
+  isActive   Boolean   @default(false)
+  isTest     Boolean   @default(false)
+
+  // Pack -> cut links (a pack has many PackItems pointing at cut products)
+  packItems    PackItem[] @relation("PackToItems")
+  includedIn   PackItem[] @relation("CutInPacks")
+
+  lots Lot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+}
+
+model PackItem {
+  id           String  @id @default(cuid())
+  pack         Product @relation("PackToItems", fields: [packProductId], references: [id])
+  packProductId String
+  cut          Product @relation("CutInPacks", fields: [cutProductId], references: [id])
+  cutProductId String
+  quantity     Int     @default(1)
+
+  @@unique([packProductId, cutProductId])
+  @@index([packProductId])
+}
+
+model Lot {
+  id         String   @id @default(cuid())
+  farm       Farm     @relation(fields: [farmId], references: [id])
+  farmId     String
+  product    Product  @relation(fields: [productId], references: [id])
+  productId  String
+  reference  String   @unique // R11 unique lot reference
+  units      Int      @default(0) // R12 non-negative (enforced by CHECK + guard)
+  isWithdrawn Boolean @default(false) // R13
+  isTest     Boolean  @default(false) // R15
+
+  // R10 date ordering: slaughter <= cutting <= packing < expiry
+  slaughterDate DateTime
+  cuttingDate   DateTime
+  packingDate   DateTime
+  expiryDate    DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+  @@index([productId])
+}
+
+model ReservationCycle {
+  id           String   @id @default(cuid())
+  name         String
+  zone         String
+  closeDate    DateTime
+  deliveryDate DateTime
+  totalPlaces  Int
+  freePlaces   Int
+  transportNote String  @default("")
+  isActive     Boolean  @default(false)
+  isTest       Boolean  @default(false)
+
+  orders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Order {
+  id                    String   @id @default(cuid())
+  cycle                 ReservationCycle @relation(fields: [cycleId], references: [id])
+  cycleId               String
+  customer              User?    @relation(fields: [customerId], references: [id])
+  customerId            String?
+  // Snapshot of a representative lot reference printed on the order (R7).
+  lotReferenceSnapshot  String   @default("")
+  status                String   @default("reserved")
+  subtotalCents         Int      @default(0)
+  discountCents         Int      @default(0)
+  deliveryFeeCents      Int      @default(600)
+  totalCents            Int      @default(0)
+  isTest                Boolean  @default(false)
+
+  items OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cycleId])
+}
+
+model OrderItem {
+  id           String @id @default(cuid())
+  order        Order  @relation(fields: [orderId], references: [id])
+  orderId      String
+  // Snapshotted fields so historical orders remain intact (R14).
+  productId    String?
+  nameSnapshot String
+  priceCentsSnapshot Int
+  lotReferenceSnapshot String @default("")
+  quantity     Int    @default(1)
+
+  @@index([orderId])
+}
+
+model Translation {
+  id         String            @id @default(cuid())
+  entityType String // "farm" | "product" | "pack" ...
+  entityId   String
+  field      String // e.g. "name", "description", "story"
+  locale     String // "ca" | "es" | "en"
+  text       String
+  status     String @default("machine") // TranslationStatus enum, see header
+  source     String @default("machine") // provenance
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entityType, entityId, field, locale])
+  @@index([entityType, entityId])
+}
+
+model AiRun {
+  id            String   @id @default(cuid())
+  useCase       String // "translate" | "metrics" | "receipt"
+  provider      String // "mock" | "openai" ...
+  model         String
+  promptVersion String
+  flagEnabled   Boolean
+  inputRef      String   @default("")
+  outputValid   Boolean  @default(false)
+  outcome       String   @default("") // "ok" | "fallback" | "invalid" ...
+  createdAt     DateTime @default(now())
+
+  @@index([useCase])
+}
+
+model MarketPriceSnapshot {
+  id            String   @id @default(cuid())
+  cutName       String
+  weekStart     DateTime
+  avgPriceCents Int
+  sampleCount   Int
+  generatedBy   String   @default("mock")
+  createdAt     DateTime @default(now())
+
+  @@unique([cutName, weekStart])
+}
