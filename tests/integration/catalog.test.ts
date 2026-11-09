@@ -24,7 +24,7 @@ let dir: string;
 dir = mkdtempSync(join(tmpdir(), "vedella-catalog-"));
 const dbPath = join(dir, "test.db");
 process.env.DATABASE_URL = `file:${dbPath}`;
-execSync("npx prisma db push --skip-generate --accept-data-loss", {
+execSync("npx prisma db push --schema prisma/schema.test.prisma --skip-generate --accept-data-loss", {
   cwd: projectRoot,
   env: { ...process.env },
   stdio: "ignore",

@@ -11,7 +11,21 @@ import { mkdtempSync, rmSync, openSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+// Tests run OFFLINE against SQLite. The DEFAULT @prisma/client now targets
+// Postgres (Neon/Vercel), which cannot be reached in the test environment, so
+// the integration harness instantiates a SEPARATE SQLite client generated from
+// prisma/schema.test.prisma into node_modules/.prisma-test/client (regenerated
+// by the `pretest` npm script). Only this helper imports the SQLite client at
+// RUNTIME; all app runtime code keeps importing the default @prisma/client.
+//
+// The two generated clients are structurally identical (same models/fields), so
+// the returned instance is surfaced through the default @prisma/client's
+// PrismaClient TYPE. That lets every test keep its existing
+// `import type { PrismaClient } from "@prisma/client"` annotations and keep
+// passing the client into src/lib helpers (which are typed against the default
+// client) without nominal-type mismatches.
+import { PrismaClient as SqliteTestClient } from "../../node_modules/.prisma-test/client";
+import type { PrismaClient } from "@prisma/client";
 
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -70,11 +84,14 @@ export async function createTestDb(): Promise<TestDb> {
   // Apply the Prisma schema to the fresh database (serialised across workers).
   const release = acquirePushLock();
   try {
-    execSync("npx prisma db push --skip-generate --accept-data-loss", {
-      cwd: projectRoot,
-      env: { ...process.env, DATABASE_URL: url },
-      stdio: "ignore",
-    });
+    execSync(
+      "npx prisma db push --schema prisma/schema.test.prisma --skip-generate --accept-data-loss",
+      {
+        cwd: projectRoot,
+        env: { ...process.env, DATABASE_URL: url },
+        stdio: "ignore",
+      },
+    );
   } finally {
     release();
   }
@@ -83,9 +100,9 @@ export async function createTestDb(): Promise<TestDb> {
   // `PRAGMA foreign_keys=ON` set below persists for every query (a fresh
   // connection would default FK enforcement OFF, which under parallel load made
   // composite-FK rejection tests intermittently fail).
-  const prisma = new PrismaClient({
+  const prisma = new SqliteTestClient({
     datasources: { db: { url: `${url}?connection_limit=1` } },
-  });
+  }) as unknown as PrismaClient;
 
   // Reproduce the integrity CHECK constraints that live in the init migration
   // (prisma db push creates tables without them). We rebuild the Lot and

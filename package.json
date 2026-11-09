@@ -9,6 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
+    "prisma:generate:test": "prisma generate --schema prisma/schema.test.prisma",
+    "pretest": "npm run prisma:generate:test",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
