@@ -2,11 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { offerSelfEditAction } from "@/lib/admin/manage-actions";
+import { ImageUploadControl } from "@/components/admin/ImageUploadControl";
 
 /**
  * A single offer row with the ONLY live self-edit a farm_manager may make:
  * price + available units. Everything else requires review and is not editable
  * here. The server action re-checks scope and the permission matrix.
+ *
+ * The offer IMAGE is uploaded here too; it is SUBMITTED and only public after a
+ * platform_admin approves it (the single MEDIA_REQUIRES_APPROVAL switch), so it
+ * does not change the offer's price or lifecycle.
  */
 export function OfferSelfEditRow({
   offerId,
@@ -14,12 +19,18 @@ export function OfferSelfEditRow({
   publicName,
   priceAmountCents,
   lifecycle,
+  isPlatform = false,
+  imageRef = null,
+  pendingImageRef = null,
 }: {
   offerId: string;
   farmName: string;
   publicName: string;
   priceAmountCents: number;
   lifecycle: string;
+  isPlatform?: boolean;
+  imageRef?: string | null;
+  pendingImageRef?: string | null;
 }) {
   const [price, setPrice] = useState((priceAmountCents / 100).toFixed(2));
   const [units, setUnits] = useState("");
@@ -71,6 +82,16 @@ export function OfferSelfEditRow({
           </button>
         </div>
         {msg && <span className="text-xs text-olive-700">{msg}</span>}
+        <div className="mt-2">
+          <ImageUploadControl
+            target="offer_image"
+            targetId={offerId}
+            title="Imatge del producte"
+            currentRef={imageRef}
+            pendingRef={pendingImageRef}
+            isPlatform={isPlatform}
+          />
+        </div>
       </td>
     </tr>
   );

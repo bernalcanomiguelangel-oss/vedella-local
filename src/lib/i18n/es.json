@@ -99,8 +99,27 @@
     "traceability": "Trazabilidad",
     "lot": "Lote",
     "farmLabel": "Granja",
+    "cutLabel": "Corte",
+    "packLabel": "Paquete",
     "multiFarm": "Pack multigranja",
     "noProducts": "Esta granja todavía no tiene productos publicados."
+  },
+  "media": {
+    "heroTitle": "Imagen de portada de la granja",
+    "galleryTitle": "Galería de la granja",
+    "offerImageTitle": "Imagen del producto",
+    "upload": "Sube una imagen",
+    "uploading": "Subiendo…",
+    "current": "Imagen actual",
+    "pendingBadge": "Pendiente de aprobación",
+    "pendingNote": "Enviada; será pública cuando la plataforma la apruebe.",
+    "publishedNote": "Publicada.",
+    "allowed": "Solo .jpg, .png o .webp (máx. 5 MB).",
+    "approve": "Aprueba",
+    "reject": "Rechaza",
+    "approved": "Imagen aprobada y publicada.",
+    "rejected": "Imagen pendiente rechazada.",
+    "error": "No se ha podido subir la imagen."
   },
   "product": {
     "weight": "Peso",

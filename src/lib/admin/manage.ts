@@ -444,6 +444,200 @@ export async function listPublicCertifications(
 }
 
 // ---------------------------------------------------------------------------
+// MEDIA (farm-uploaded images; submitted then approved, mirroring certs)
+//
+// A farm_manager uploads an image for their own OFFER or their FARM PROFILE
+// (hero / gallery). When MEDIA_REQUIRES_APPROVAL is true (default) the path is
+// written to a pending* field and only copied to the public field by a
+// platform_admin approval. When the switch is false, uploads land directly on
+// the public field. All of this reads the single MEDIA_REQUIRES_APPROVAL switch
+// in src/lib/media.ts, so flipping the policy is a one-line change there.
+//
+// The file itself is written by the server action (it has the bytes); these
+// pure functions only move the stored PATH between pending* and public fields,
+// enforcing farm scope and platform-admin-only approval. AI never calls these.
+// ---------------------------------------------------------------------------
+
+/** Which media slot an upload/approval targets. */
+export type MediaTarget = "offer_image" | "farm_hero" | "farm_gallery";
+
+/**
+ * Record a farm_manager/platform_admin image upload. `storedPath` is the
+ * already-validated, already-written relative path (e.g. "/uploads/<id>.jpg").
+ * When `requiresApproval` is true, the path is stored to the pending* field;
+ * otherwise it is published directly. Farm scope is enforced via canActOnFarm.
+ *
+ * For "farm_gallery" the pending/public field holds a JSON array of paths; the
+ * new path is appended to the appropriate (pending or public) array.
+ */
+export async function applyMediaUpload(
+  db: PrismaClient,
+  actor: Actor,
+  args: {
+    target: MediaTarget;
+    /** Offer id for offer_image; farm id for farm_hero/farm_gallery. */
+    targetId: string;
+    storedPath: string;
+    requiresApproval: boolean;
+  },
+): Promise<ManageResult & { pending?: boolean }> {
+  const { target, targetId, storedPath, requiresApproval } = args;
+  if (!storedPath || typeof storedPath !== "string") {
+    return { ok: false, code: "BAD_PATH", message: "Missing stored path." };
+  }
+
+  if (target === "offer_image") {
+    const offer = await db.farmProductOffer.findUnique({ where: { id: targetId } });
+    if (!offer) return NOT_FOUND;
+    if (!canActOnFarm(actor, offer.farmId)) return FORBIDDEN;
+    await db.farmProductOffer.update({
+      where: { id: targetId },
+      data: requiresApproval
+        ? { pendingImageRef: storedPath }
+        : { imageRef: storedPath, pendingImageRef: null },
+    });
+    return { ok: true, pending: requiresApproval };
+  }
+
+  // Farm profile media (hero / gallery).
+  const farm = await db.farm.findUnique({ where: { id: targetId } });
+  if (!farm) return NOT_FOUND;
+  if (!canActOnFarm(actor, farm.id)) return FORBIDDEN;
+
+  if (target === "farm_hero") {
+    await db.farm.update({
+      where: { id: targetId },
+      data: requiresApproval
+        ? { pendingHeroImageRef: storedPath }
+        : { heroImageRef: storedPath, pendingHeroImageRef: null },
+    });
+    return { ok: true, pending: requiresApproval };
+  }
+
+  // farm_gallery: append to the relevant JSON-array field.
+  const field = requiresApproval ? "pendingGalleryRefs" : "galleryRefs";
+  const current = parseRefArray(farm[field]);
+  current.push(storedPath);
+  await db.farm.update({
+    where: { id: targetId },
+    data: { [field]: JSON.stringify(current) },
+  });
+  return { ok: true, pending: requiresApproval };
+}
+
+/** Parse a nullable JSON-array string of image refs; tolerant of bad data. */
+function parseRefArray(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * platform_admin approves submitted media: move pending* -> public field.
+ * For the gallery, the pending array is merged into the public array and the
+ * pending array cleared. Only a platform_admin may approve.
+ *
+ * INTENTIONAL BATCH SEMANTICS (farm_gallery): approve/reject operate on the
+ * WHOLE pending array at once (approve merges all pending refs into public and
+ * clears pending; reject clears pending). This is deliberate and matches the
+ * admin UI, which exposes a single pending gallery slot (the most recent
+ * pending ref) and therefore reviews gallery submissions as one batch per farm.
+ * Per-ref approval would require a different UI and keying scheme; it is out of
+ * scope here. If the UI ever surfaces individual pending refs, switch these to
+ * accept a specific ref to approve/reject.
+ */
+export async function applyMediaApprove(
+  db: PrismaClient,
+  actor: Actor,
+  args: { target: MediaTarget; targetId: string },
+): Promise<ManageResult> {
+  if (actor.role !== "platform_admin") return FORBIDDEN;
+  const { target, targetId } = args;
+
+  if (target === "offer_image") {
+    const offer = await db.farmProductOffer.findUnique({ where: { id: targetId } });
+    if (!offer) return NOT_FOUND;
+    if (!offer.pendingImageRef) {
+      return { ok: false, code: "NO_PENDING", message: "No pending image." };
+    }
+    await db.farmProductOffer.update({
+      where: { id: targetId },
+      data: { imageRef: offer.pendingImageRef, pendingImageRef: null },
+    });
+    return { ok: true };
+  }
+
+  const farm = await db.farm.findUnique({ where: { id: targetId } });
+  if (!farm) return NOT_FOUND;
+
+  if (target === "farm_hero") {
+    if (!farm.pendingHeroImageRef) {
+      return { ok: false, code: "NO_PENDING", message: "No pending image." };
+    }
+    await db.farm.update({
+      where: { id: targetId },
+      data: { heroImageRef: farm.pendingHeroImageRef, pendingHeroImageRef: null },
+    });
+    return { ok: true };
+  }
+
+  // farm_gallery: merge pending into public, then clear pending.
+  const pending = parseRefArray(farm.pendingGalleryRefs);
+  if (pending.length === 0) {
+    return { ok: false, code: "NO_PENDING", message: "No pending gallery media." };
+  }
+  const publicRefs = parseRefArray(farm.galleryRefs);
+  const merged = [...publicRefs, ...pending];
+  await db.farm.update({
+    where: { id: targetId },
+    data: { galleryRefs: JSON.stringify(merged), pendingGalleryRefs: null },
+  });
+  return { ok: true };
+}
+
+/**
+ * platform_admin rejects submitted media: clear the pending* field (the public
+ * value, if any, is untouched). Only a platform_admin may reject.
+ */
+export async function applyMediaReject(
+  db: PrismaClient,
+  actor: Actor,
+  args: { target: MediaTarget; targetId: string },
+): Promise<ManageResult> {
+  if (actor.role !== "platform_admin") return FORBIDDEN;
+  const { target, targetId } = args;
+
+  if (target === "offer_image") {
+    const offer = await db.farmProductOffer.findUnique({ where: { id: targetId } });
+    if (!offer) return NOT_FOUND;
+    await db.farmProductOffer.update({
+      where: { id: targetId },
+      data: { pendingImageRef: null },
+    });
+    return { ok: true };
+  }
+
+  const farm = await db.farm.findUnique({ where: { id: targetId } });
+  if (!farm) return NOT_FOUND;
+  if (target === "farm_hero") {
+    await db.farm.update({
+      where: { id: targetId },
+      data: { pendingHeroImageRef: null },
+    });
+    return { ok: true };
+  }
+  await db.farm.update({
+    where: { id: targetId },
+    data: { pendingGalleryRefs: null },
+  });
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // LOTS (traceability changes require approval for farm_manager)
 // ---------------------------------------------------------------------------
 

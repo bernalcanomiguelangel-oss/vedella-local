@@ -19,9 +19,21 @@ test("customer can browse, search, add a pack + a cut, and reserve", async ({
     page.getByRole("heading", { name: "Cal Serrat del Bosc" }),
   ).toBeVisible();
 
+  // FEAT-004: farm cards render a media box. Seeded farms have NO uploaded
+  // hero image, so NO <img> should appear inside the card and the decorative
+  // gradient fallback is used instead (the app stays polished offline).
+  const firstFarmCard = page
+    .getByRole("link")
+    .filter({ has: page.getByRole("heading", { name: "Mas Vallgorguina" }) });
+  await expect(firstFarmCard.locator("img")).toHaveCount(0);
+
   // Open a farm page.
   await page.goto("/ca/farms/mas-vallgorguina");
   await expect(page.getByRole("heading", { name: "Mas Vallgorguina" })).toBeVisible();
+
+  // FEAT-004: with no uploaded hero/gallery, the header has no <img> and the
+  // gallery section is absent, while product cards still render.
+  await expect(page.getByTestId("farm-gallery")).toHaveCount(0);
 
   // Search returns matching products.
   await page.goto("/ca");
@@ -40,6 +52,18 @@ test("customer can browse, search, add a pack + a cut, and reserve", async ({
     has: page.getByRole("heading", { name: "Entrecot", exact: true }),
   });
   await expect(packCard.getByTestId("add-to-basket")).toBeVisible();
+
+  // FEAT-003: traceability now lives INSIDE each product card (not in a
+  // farm-wide list). The old farm-wide "traceability-chain" section is gone.
+  await expect(page.getByTestId("traceability-chain")).toHaveCount(0);
+  // The cut card shows its own Farm -> Lot -> Tall chain with a lot reference.
+  const cutTrace = cutCard.getByTestId("product-trace");
+  await expect(cutTrace).toBeVisible();
+  await expect(cutTrace).toContainText("Mas Vallgorguina");
+  // The pack card shows a per-item chain for each included item.
+  await expect(
+    packCard.getByTestId("product-trace-item").first(),
+  ).toBeVisible();
 
   // Add the pack; the button flips to "✓ Afegit", proving the handler ran and
   // the basket state updated (and was persisted to localStorage).

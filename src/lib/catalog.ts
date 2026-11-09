@@ -69,6 +69,23 @@ async function loadTranslationIndex(
   return buildTranslationIndex(rows);
 }
 
+/**
+ * One node-by-node traceability entry for a single product/offer, resolved from
+ * the lot(s) that actually back it. Rendered INSIDE the product card
+ * (FEAT-003), replacing the old farm-wide list. `lotReference` is null only when
+ * a legacy record cannot resolve a usable lot (never for an offered cut).
+ */
+export interface ProductTrace {
+  /** Originating farm name (honours multi-farm pack items). */
+  farmName: string;
+  /** The real lot code backing this specific offer/item (monospace in UI). */
+  lotReference: string | null;
+  /** The cut/offer name (the "Tall" node). */
+  cutName: string;
+  /** The pack name (the "Paquet" node); only set for pack-item traces. */
+  packName?: string;
+}
+
 export interface OfferedCut {
   id: string;
   kind: "cut";
@@ -82,6 +99,13 @@ export interface OfferedCut {
   packaging: string | null;
   shelfLife: string | null;
   lotReference: string | null;
+  /**
+   * This cut's own Farm -> Lot -> Tall chain (FEAT-003). Resolved from the lot
+   * backing THIS offer, so each card shows its specific provenance.
+   */
+  trace: ProductTrace;
+  /** APPROVED/public image path only (never a pending upload). */
+  imageRef: string | null;
 }
 
 export interface OfferedPackItem {
@@ -104,8 +128,15 @@ export interface OfferedPack {
   weight: string | null;
   items: OfferedPackItem[];
   lotReference: string | null;
+  /**
+   * Per-item Farm -> Lot -> Tall -> Paquet chains (FEAT-003), one per included
+   * item, honouring multi-farm packs where each item comes from its own farm.
+   */
+  trace: ProductTrace[];
   /** True for a pack whose items span more than one farm. */
   isMultiFarm?: boolean;
+  /** APPROVED/public image path only (never a pending upload). */
+  imageRef: string | null;
 }
 
 export interface OfferedFarm {
@@ -118,6 +149,10 @@ export interface OfferedFarm {
   foundedYear: number;
   animalCount: number;
   story: string;
+  /** APPROVED/public hero image path only (never pendingHeroImageRef). */
+  heroImageRef: string | null;
+  /** APPROVED/public gallery image paths only (never pendingGalleryRefs). */
+  galleryRefs: string[];
 }
 
 export interface PublicCertification {
@@ -189,7 +224,25 @@ export async function listOfferedFarms(
     foundedYear: f.foundedYear,
     animalCount: f.animalCount,
     story: resolveContent(index, "farm", f.id, "story", locale, f.story),
+    // PUBLIC image fields only; pending* are never exposed here.
+    heroImageRef: f.heroImageRef ?? null,
+    galleryRefs: parsePublicGallery(f.galleryRefs),
   }));
+}
+
+/**
+ * Parse the farm's PUBLIC gallery JSON-array field into a string[]. Only the
+ * approved `galleryRefs` column is ever passed here; `pendingGalleryRefs` is
+ * never read on any public path. Tolerant of malformed data.
+ */
+function parsePublicGallery(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -285,6 +338,13 @@ async function getFarmCatalogLegacy(
         packaging: p.packaging,
         shelfLife: p.shelfLife,
         lotReference: lotRef,
+        trace: {
+          farmName: farm.name,
+          lotReference: lotRef,
+          cutName: resolveContent(index, "product", p.id, "name", locale, p.name),
+        },
+        // Legacy Product has no image column.
+        imageRef: null,
       });
     }
   }
@@ -305,10 +365,29 @@ async function getFarmCatalogLegacy(
     if (!allItemsOffered) continue;
     // Representative lot: use one of the included cuts' lots for traceability.
     const firstCut = cuts.find((c) => c.id === items[0].cutProductId);
+    const packName = resolveContent(
+      index,
+      "product",
+      p.id,
+      "name",
+      locale,
+      p.name,
+    );
+    // Per-item trace: each included cut resolves its own backing lot (the same
+    // lot that makes it individually offerable), keyed off the offered cut.
+    const trace: ProductTrace[] = items.map((it) => {
+      const backing = cuts.find((c) => c.id === it.cutProductId);
+      return {
+        farmName: farm.name,
+        lotReference: backing?.lotReference ?? null,
+        cutName: it.name,
+        packName,
+      };
+    });
     packs.push({
       id: p.id,
       kind: "pack",
-      name: resolveContent(index, "product", p.id, "name", locale, p.name),
+      name: packName,
       description: resolveContent(
         index,
         "product",
@@ -322,6 +401,8 @@ async function getFarmCatalogLegacy(
       weight: p.weight,
       items,
       lotReference: firstCut?.lotReference ?? null,
+      trace,
+      imageRef: null,
     });
   }
 
@@ -341,6 +422,8 @@ async function getFarmCatalogLegacy(
     foundedYear: farm.foundedYear,
     animalCount: farm.animalCount,
     story: resolveContent(index, "farm", farm.id, "story", locale, farm.story),
+    heroImageRef: farm.heroImageRef ?? null,
+    galleryRefs: parsePublicGallery(farm.galleryRefs),
     packs,
     cuts,
     certifications: farm.certifications.map((c) => ({
@@ -484,6 +567,20 @@ export async function getFarmCatalogFromOffers(
         ? `${o.minimumShelfLifeDays} dies en fred`
         : null,
       lotReference: lotRef,
+      trace: {
+        farmName: farm.name,
+        lotReference: lotRef,
+        cutName: resolveContent(
+          index,
+          "product",
+          o.id,
+          "name",
+          locale,
+          o.publicName,
+        ),
+      },
+      // PUBLIC/approved image only; pendingImageRef is never exposed.
+      imageRef: o.imageRef ?? null,
     });
   }
   const offeredOfferIds = new Set(cuts.map((c) => c.id));
@@ -551,10 +648,26 @@ export async function getFarmCatalogFromOffers(
     }
     if (!allOffered) continue;
     const representativeLot = items.find((i) => i.lotReference)?.lotReference ?? null;
+    const packName = resolveContent(
+      index,
+      "product",
+      pk.id,
+      "name",
+      locale,
+      pk.publicName,
+    );
+    // Per-item trace, honouring multi-farm items (each item carries its own
+    // farm + the lot that actually backs that item).
+    const trace: ProductTrace[] = items.map((it) => ({
+      farmName: it.farmName ?? farm.name,
+      lotReference: it.lotReference ?? null,
+      cutName: it.name,
+      packName,
+    }));
     packs.push({
       id: pk.id,
       kind: "pack",
-      name: resolveContent(index, "product", pk.id, "name", locale, pk.publicName),
+      name: packName,
       description: resolveContent(
         index,
         "product",
@@ -568,7 +681,9 @@ export async function getFarmCatalogFromOffers(
       weight: null,
       items,
       lotReference: representativeLot,
+      trace,
       isMultiFarm: pk.isMultiFarm,
+      imageRef: null,
     });
   }
   // Transitional union (M8): a legacy Product that is approved+active and backed
@@ -626,6 +741,19 @@ export async function getFarmCatalogFromOffers(
       packaging: p.packaging,
       shelfLife: p.shelfLife,
       lotReference: lotRef,
+      trace: {
+        farmName: farm.name,
+        lotReference: lotRef,
+        cutName: resolveContent(
+          legacyIndex,
+          "product",
+          p.id,
+          "name",
+          locale,
+          p.name,
+        ),
+      },
+      imageRef: null,
     });
   }
 
@@ -645,6 +773,8 @@ export async function getFarmCatalogFromOffers(
     foundedYear: farm.foundedYear,
     animalCount: farm.animalCount,
     story: resolveContent(index, "farm", farm.id, "story", locale, farm.story),
+    heroImageRef: farm.heroImageRef ?? null,
+    galleryRefs: parsePublicGallery(farm.galleryRefs),
     packs,
     cuts,
     certifications: farm.certifications.map((c) => ({

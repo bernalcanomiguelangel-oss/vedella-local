@@ -1,5 +1,6 @@
 import { AddToBasketButton } from "@/components/AddToBasketButton";
-import type { OfferedCut, OfferedPack } from "@/lib/catalog";
+import type { OfferedCut, OfferedPack, ProductTrace } from "@/lib/catalog";
+import { isPublicImageRef, imageAltText } from "@/lib/image-display";
 
 interface ProductStrings {
   weight: string;
@@ -12,6 +13,53 @@ interface ProductStrings {
   included: string;
   units: string;
   lot: string;
+  traceability: string;
+  farmLabel: string;
+  cutLabel: string;
+  packLabel: string;
+}
+
+/**
+ * Product media box with a consistent 4:3 aspect ratio. Shows the offer's
+ * APPROVED image when present (informative, so it carries meaningful alt text)
+ * and otherwise renders a tasteful gradient placeholder marked decorative, so
+ * cards stay uniform for seeded products that have no uploaded photo.
+ */
+function ProductMedia({
+  imageRef,
+  name,
+  variant,
+}: {
+  imageRef: string | null;
+  name: string;
+  variant: "cut" | "pack";
+}) {
+  const hasImage = isPublicImageRef(imageRef);
+  const placeholder =
+    variant === "pack"
+      ? "bg-gradient-to-br from-beef-100 via-cream-100 to-gold-100"
+      : "bg-gradient-to-br from-cream-100 via-gold-50 to-beef-50";
+  return (
+    <div
+      className={`relative mb-4 aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-pasture-100 ${placeholder}`}
+    >
+      {hasImage ? (
+        <img
+          src={imageRef as string}
+          alt={imageAltText(name)}
+          loading="lazy"
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 flex items-center justify-center text-4xl opacity-40"
+        >
+          {variant === "pack" ? "🥩" : "🍖"}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Fact({ label, value }: { label: string; value: string | null }) {
@@ -20,6 +68,74 @@ function Fact({ label, value }: { label: string; value: string | null }) {
     <div className="flex justify-between gap-3 border-b border-pasture-100 py-1 last:border-0">
       <dt className="text-pasture-500">{label}</dt>
       <dd className="text-right font-medium text-pasture-800">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Per-product traceability chain (FEAT-003). Renders this specific product's
+ * Farm → Lot → Tall(→ Paquet) provenance inside its card, resolved from the
+ * lot(s) that actually back the offer. Reuses the chip/pill styling moved down
+ * from the old farm-wide section; lot references stay in monospace. `withPack`
+ * appends the Paquet node for pack-item chains.
+ */
+function TraceChain({
+  entries,
+  strings,
+  withPack,
+}: {
+  entries: ProductTrace[];
+  strings: ProductStrings;
+  withPack: boolean;
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <div
+      data-testid="product-trace"
+      className="mt-3 rounded-xl bg-pasture-50 px-3 py-2 text-xs text-pasture-700 ring-1 ring-pasture-100"
+    >
+      <span className="font-semibold">{strings.traceability}</span>
+      <ul className="mt-2 space-y-1.5">
+        {entries.map((t, i) => (
+          <li
+            key={`${t.cutName}-${t.lotReference ?? i}`}
+            data-testid="product-trace-item"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            <span
+              className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200"
+              title={strings.farmLabel}
+            >
+              {t.farmName}
+            </span>
+            <span className="text-pasture-400">→</span>
+            <span
+              className="rounded-full bg-cream-50 px-2.5 py-0.5 font-mono ring-1 ring-pasture-200"
+              title={strings.lot}
+            >
+              {t.lotReference ?? "—"}
+            </span>
+            <span className="text-pasture-400">→</span>
+            <span
+              className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200"
+              title={strings.cutLabel}
+            >
+              {t.cutName}
+            </span>
+            {withPack && t.packName && (
+              <>
+                <span className="text-pasture-400">→</span>
+                <span
+                  className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200"
+                  title={strings.packLabel}
+                >
+                  {t.packName}
+                </span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -39,8 +155,9 @@ export function CutCard({
     <div
       data-testid="cut-card"
       data-product-name={cut.name}
-      className="flex flex-col rounded-2xl bg-cream-50 p-5 shadow-sm ring-1 ring-pasture-100"
+      className="flex flex-col rounded-2xl bg-cream-50 p-5 shadow-sm ring-1 ring-pasture-100 transition hover:shadow-md"
     >
+      <ProductMedia imageRef={cut.imageRef} name={cut.name} variant="cut" />
       <div className="flex items-start justify-between gap-2">
         <h4 className="font-bold text-pasture-900">{cut.name}</h4>
         <span className="rounded-full bg-beef-50 px-2.5 py-1 text-sm font-bold text-beef-700">
@@ -55,12 +172,8 @@ export function CutCard({
         <Fact label={strings.packaging} value={cut.packaging} />
         <Fact label={strings.shelfLife} value={cut.shelfLife} />
       </dl>
-      {cut.lotReference && (
-        <p className="mt-3 text-xs text-pasture-500">
-          {strings.lot}: <span className="font-mono">{cut.lotReference}</span>
-        </p>
-      )}
-      <div className="mt-auto">
+      <TraceChain entries={[cut.trace]} strings={strings} withPack={false} />
+      <div className="mt-auto pt-3">
         <AddToBasketButton
           item={{
             productId: cut.id,
@@ -94,8 +207,9 @@ export function PackCard({
     <div
       data-testid="pack-card"
       data-product-name={pack.name}
-      className="flex flex-col rounded-2xl bg-gradient-to-b from-cream-50 to-cream-100 p-5 shadow-md ring-1 ring-pasture-200"
+      className="flex flex-col rounded-2xl bg-gradient-to-b from-cream-50 to-cream-100 p-5 shadow-md ring-1 ring-pasture-200 transition hover:shadow-lg"
     >
+      <ProductMedia imageRef={pack.imageRef} name={pack.name} variant="pack" />
       <div className="flex items-start justify-between gap-2">
         <h4 className="text-lg font-bold text-pasture-900">{pack.name}</h4>
         <span className="rounded-full bg-beef-600 px-3 py-1 text-sm font-bold text-cream-50 shadow">
@@ -133,12 +247,8 @@ export function PackCard({
           ))}
         </ul>
       </div>
-      {pack.lotReference && (
-        <p className="mt-3 text-xs text-pasture-500">
-          {strings.lot}: <span className="font-mono">{pack.lotReference}</span>
-        </p>
-      )}
-      <div className="mt-auto">
+      <TraceChain entries={pack.trace} strings={strings} withPack={true} />
+      <div className="mt-auto pt-3">
         <AddToBasketButton
           item={{
             productId: pack.id,

@@ -17,6 +17,9 @@
 /prisma/dev.db
 /prisma/dev.db-journal
 
+# Uploaded media (local filesystem store; DB keeps only the path)
+/public/uploads
+
 # Playwright artifacts
 /test-results
 /playwright-report

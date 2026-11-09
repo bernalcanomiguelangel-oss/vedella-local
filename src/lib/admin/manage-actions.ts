@@ -18,6 +18,7 @@ import { requireAdmin, requirePlatformAdmin } from "@/lib/auth";
 import { recordAdminAudit } from "./audit";
 import {
   type Actor,
+  type MediaTarget,
   applyOfferSelfEdit,
   applyOfferCreate,
   applyProfileSubmitReview,
@@ -27,6 +28,9 @@ import {
   applyCertSubmit,
   applyCertApprove,
   applyCertReject,
+  applyMediaUpload,
+  applyMediaApprove,
+  applyMediaReject,
   applyLotCreate,
   applyPackCreate,
   applyPackAccept,
@@ -36,6 +40,12 @@ import {
   applyCycleAddFarm,
   applyCycleRemoveFarm,
 } from "./manage";
+import {
+  MEDIA_REQUIRES_APPROVAL,
+  validateImageUpload,
+  writeImageFile,
+  deleteImageFile,
+} from "@/lib/media";
 
 export interface ActionResult {
   ok: boolean;
@@ -235,6 +245,148 @@ export async function certRejectAction(
       action: "cert_reject",
       entityType: "farm_certification",
       entityId: certId,
+      toState: "rejected",
+    });
+    revalidateAll();
+  }
+  return res;
+}
+
+// --- Media (image uploads; submitted then approved) ------------------------
+
+/**
+ * Resolve the farm that owns a media target, so we can enforce canActOnFarm in
+ * the server action BEFORE writing any bytes to disk. Offer media resolves via
+ * the offer's farmId; farm media's targetId IS the farm id.
+ */
+async function resolveMediaFarmId(
+  target: MediaTarget,
+  targetId: string,
+): Promise<string | null> {
+  if (target === "offer_image") {
+    const offer = await prisma.farmProductOffer.findUnique({
+      where: { id: targetId },
+      select: { farmId: true },
+    });
+    return offer?.farmId ?? null;
+  }
+  const farm = await prisma.farm.findUnique({
+    where: { id: targetId },
+    select: { id: true },
+  });
+  return farm?.id ?? null;
+}
+
+/**
+ * Upload a farm image for an offer or the farm profile (hero/gallery). Re-auths
+ * on the server, resolves and farm-scopes the target (a farm_manager may ONLY
+ * upload to their own farm), validates the UNTRUSTED file by extension + magic
+ * bytes + size, writes it to the git-ignored uploads dir, and stores the path
+ * to the pending* field (or public field when MEDIA_REQUIRES_APPROVAL is off).
+ *
+ * `fileData` carries the raw bytes (base64) + original filename; we never trust
+ * the client Content-Type and never log file contents.
+ */
+export async function mediaUploadAction(args: {
+  target: MediaTarget;
+  targetId: string;
+  fileBase64: string;
+  originalName: string;
+}): Promise<ActionResult & { storedPath?: string; pending?: boolean }> {
+  const user = await requireAdmin();
+  const { target, targetId } = args;
+
+  // Farm scope BEFORE touching the filesystem: a farm_manager can only upload to
+  // their own farm; platform_admin to any.
+  const farmId = await resolveMediaFarmId(target, targetId);
+  if (!farmId) {
+    return { ok: false, code: "NOT_FOUND", message: "Target not found." };
+  }
+  const actor = actorOf(user);
+  if (!(actor.role === "platform_admin" || actor.farmId === farmId)) {
+    return { ok: false, code: "FORBIDDEN", message: "Not permitted for this farm." };
+  }
+
+  // Decode + validate the UNTRUSTED upload (extension AND magic bytes AND size).
+  const buf = Buffer.from(args.fileBase64, "base64");
+  const validated = validateImageUpload(buf, args.originalName);
+  if (!validated.ok) {
+    return { ok: false, code: validated.code, message: validated.message };
+  }
+
+  // A platform_admin acting directly publishes immediately (mirrors the
+  // profile direct-edit vs submit-review distinction); a farm_manager's upload
+  // is gated by the single MEDIA_REQUIRES_APPROVAL switch.
+  const requiresApproval =
+    actor.role === "platform_admin" ? false : MEDIA_REQUIRES_APPROVAL;
+
+  // Bytes are written BEFORE the DB apply, so if the apply fails (e.g. the
+  // target was deleted between the scope resolve and the apply -> NOT_FOUND) or
+  // throws, the file would be orphaned with nothing referencing it. Delete it
+  // on any non-success so the git-ignored uploads dir never accumulates garbage.
+  await writeImageFile(validated.storedFilename, buf);
+  let res: ActionResult & { pending?: boolean };
+  try {
+    res = await applyMediaUpload(prisma, actor, {
+      target,
+      targetId,
+      storedPath: validated.storedPath,
+      requiresApproval,
+    });
+  } catch (err) {
+    await deleteImageFile(validated.storedFilename);
+    throw err;
+  }
+  if (res.ok) {
+    await recordAdminAudit({
+      actor: user,
+      action: requiresApproval ? "media_upload_pending" : "media_upload",
+      entityType: target,
+      entityId: targetId,
+      toState: requiresApproval ? "pending_review" : undefined,
+      // Path only; NEVER the file contents.
+      detail: `media ${target} path ${validated.storedPath}`,
+    });
+    revalidateAll();
+    return { ...res, storedPath: validated.storedPath };
+  }
+  // DB apply reported a failure (NOT_FOUND / FORBIDDEN / BAD_PATH): remove the
+  // just-written orphan before returning the error.
+  await deleteImageFile(validated.storedFilename);
+  return res;
+}
+
+export async function mediaApproveAction(
+  target: MediaTarget,
+  targetId: string,
+): Promise<ActionResult> {
+  const user = await requirePlatformAdmin();
+  const res = await applyMediaApprove(prisma, actorOf(user), { target, targetId });
+  if (res.ok) {
+    await recordAdminAudit({
+      actor: user,
+      action: "media_approve",
+      entityType: target,
+      entityId: targetId,
+      toState: "approved",
+    });
+    revalidateAll();
+  }
+  return res;
+}
+
+export async function mediaRejectAction(
+  target: MediaTarget,
+  targetId: string,
+): Promise<ActionResult> {
+  const user = await requirePlatformAdmin();
+  const res = await applyMediaReject(prisma, actorOf(user), { target, targetId });
+  if (res.ok) {
+    await recordAdminAudit({
+      actor: user,
+      action: "media_reject",
+      entityType: target,
+      entityId: targetId,
       toState: "rejected",
     });
     revalidateAll();

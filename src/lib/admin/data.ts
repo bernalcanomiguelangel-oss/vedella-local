@@ -233,6 +233,8 @@ export async function listOffersGroupedByDefinition(user: SessionUser) {
         lifecycle: string;
         isApproved: boolean;
         isActive: boolean;
+        imageRef: string | null;
+        pendingImageRef: string | null;
       }>;
     }
   >();
@@ -255,6 +257,8 @@ export async function listOffersGroupedByDefinition(user: SessionUser) {
       lifecycle: o.lifecycle,
       isApproved: o.isApproved,
       isActive: o.isActive,
+      imageRef: o.imageRef,
+      pendingImageRef: o.pendingImageRef,
     });
   }
   return Array.from(groups.values());
