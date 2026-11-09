@@ -116,6 +116,62 @@ no reliable network, so a dependency-free, deterministic SVG render keeps the
 dashboard working fully offline. Each chart has an empty state and a
 small-sample caveat.
 
+## Image uploads
+
+Farms illustrate their catalogue with real photos. Uploads are handled entirely
+on the local filesystem, with no cloud storage and no external services.
+
+**Who can upload.** A `farm_manager` uploads images for their **own** product
+offers and for their **own** farm profile (hero image plus gallery). A
+`platform_admin` may manage media for **any** farm. Farm-to-farm isolation is
+enforced server-side, the same way the rest of the admin area is.
+
+**Where files live.** Uploads are **real local files** written to the
+git-ignored uploads directory `public/uploads` (see `.gitignore`), served as
+static assets. The database stores **only** the relative path and metadata
+(for example `/uploads/<random>.jpg`), never the image bytes. The directory is
+created on demand, so the app works offline with zero configuration.
+
+**Untrusted-file handling.** Every upload is treated as untrusted
+(`src/lib/media.ts`):
+
+- Allowed types are **jpg/jpeg, png, and webp only**, validated by **both** the
+  file extension **and** magic-byte sniffing of the buffer header. The
+  client-supplied `Content-Type` is never trusted, and a file whose extension
+  disagrees with its real content is rejected.
+- Maximum size is **5 MB** (`MAX_IMAGE_BYTES`).
+- The stored filename is **randomised and sanitised** (no path separators, no
+  `..`, canonical safe extension), and the writer re-resolves the final path and
+  refuses to write anything outside the uploads directory, so a crafted filename
+  can never escape it (path traversal rejected). File contents are never logged.
+
+**The single approval switch.** Farm media follows the same approval rule as
+certifications and profile edits. The policy lives in exactly one place, the
+constant `MEDIA_REQUIRES_APPROVAL` in `src/lib/media.ts`:
+
+- **Default is `true`.** A farm-uploaded image is **submitted** (written to a
+  `pending*` field) and becomes public only after a `platform_admin` approves it
+  (the value is then promoted to the public field).
+- To **auto-publish** uploads instead, flip `MEDIA_REQUIRES_APPROVAL` to
+  `false`. That one-line change makes farm uploads write straight to the public
+  field with no review. Every upload/approval path reads this constant, so no
+  other code needs to change.
+
+The schema change ships as the additive migration
+`20261109111946_add_media_image_refs`, which adds the public media fields plus
+the new `pending*` columns: `pendingHeroImageRef` and `pendingGalleryRefs` on the
+farm profile and `pendingImageRef` on each product offer.
+
+## Traceability placement and aesthetics
+
+Traceability now renders **per product/offer**, inside each product card, rather
+than as a single farm-wide list on the farm page. Each card shows that specific
+product's Granja -> Lot -> Tall (-> Paquet) chain resolved from the lots that
+actually back the offer, so provenance sits next to the product it describes.
+
+For the visual benchmark against well-regarded competitors and the aesthetic
+inspector findings, see [`docs/aesthetic-review.md`](docs/aesthetic-review.md).
+
 ## Scripts
 
 | Script             | Description                                      |
