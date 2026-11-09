@@ -540,6 +540,15 @@ function parseRefArray(raw: string | null): string[] {
  * platform_admin approves submitted media: move pending* -> public field.
  * For the gallery, the pending array is merged into the public array and the
  * pending array cleared. Only a platform_admin may approve.
+ *
+ * INTENTIONAL BATCH SEMANTICS (farm_gallery): approve/reject operate on the
+ * WHOLE pending array at once (approve merges all pending refs into public and
+ * clears pending; reject clears pending). This is deliberate and matches the
+ * admin UI, which exposes a single pending gallery slot (the most recent
+ * pending ref) and therefore reviews gallery submissions as one batch per farm.
+ * Per-ref approval would require a different UI and keying scheme; it is out of
+ * scope here. If the UI ever surfaces individual pending refs, switch these to
+ * accept a specific ref to approve/reject.
  */
 export async function applyMediaApprove(
   db: PrismaClient,

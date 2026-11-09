@@ -227,3 +227,28 @@ export async function writeImageFile(
   await fs.writeFile(resolved, buf);
   return `${UPLOADS_PUBLIC_PREFIX}/${storedFilename}`;
 }
+
+/**
+ * Best-effort delete of a just-written upload. Used to clean up an orphaned file
+ * when the DB apply fails AFTER the bytes were written, so the uploads directory
+ * never accumulates files that nothing references.
+ *
+ * Only ever operates on our own randomised filenames inside the uploads dir: the
+ * same traversal guard as writeImageFile applies, and a missing file (ENOENT) is
+ * silently ignored. Never throws, so it is safe to call in a failure path.
+ */
+export async function deleteImageFile(storedFilename: string): Promise<void> {
+  try {
+    const dir = uploadsDir();
+    const target = path.join(dir, storedFilename);
+    const resolved = path.resolve(target);
+    if (resolved !== target || path.dirname(resolved) !== path.resolve(dir)) {
+      // Refuse to touch anything outside the uploads directory.
+      return;
+    }
+    await fs.unlink(resolved);
+  } catch {
+    // Best-effort: a missing file or any fs error here is non-fatal. We never
+    // log file paths/contents and never surface this to the caller.
+  }
+}

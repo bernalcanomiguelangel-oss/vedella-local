@@ -44,10 +44,14 @@ export function ImageUploadControl({
   async function onFile(file: File) {
     const buf = await file.arrayBuffer();
     // Browser-side base64 of the raw bytes; the server never trusts the
-    // client Content-Type and re-validates by magic bytes.
-    let binary = "";
+    // client Content-Type and re-validates by magic bytes. We convert in chunks
+    // (not byte-by-byte) to avoid O(n) string concatenation over a 5 MB buffer.
     const bytes = new Uint8Array(buf);
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const CHUNK = 0x8000; // 32 KB per String.fromCharCode call (arg-count safe).
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
     const fileBase64 = btoa(binary);
     startTransition(async () => {
       const res = await mediaUploadAction({

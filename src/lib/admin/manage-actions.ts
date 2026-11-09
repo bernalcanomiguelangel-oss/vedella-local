@@ -44,6 +44,7 @@ import {
   MEDIA_REQUIRES_APPROVAL,
   validateImageUpload,
   writeImageFile,
+  deleteImageFile,
 } from "@/lib/media";
 
 export interface ActionResult {
@@ -319,13 +320,23 @@ export async function mediaUploadAction(args: {
   const requiresApproval =
     actor.role === "platform_admin" ? false : MEDIA_REQUIRES_APPROVAL;
 
+  // Bytes are written BEFORE the DB apply, so if the apply fails (e.g. the
+  // target was deleted between the scope resolve and the apply -> NOT_FOUND) or
+  // throws, the file would be orphaned with nothing referencing it. Delete it
+  // on any non-success so the git-ignored uploads dir never accumulates garbage.
   await writeImageFile(validated.storedFilename, buf);
-  const res = await applyMediaUpload(prisma, actor, {
-    target,
-    targetId,
-    storedPath: validated.storedPath,
-    requiresApproval,
-  });
+  let res: ActionResult & { pending?: boolean };
+  try {
+    res = await applyMediaUpload(prisma, actor, {
+      target,
+      targetId,
+      storedPath: validated.storedPath,
+      requiresApproval,
+    });
+  } catch (err) {
+    await deleteImageFile(validated.storedFilename);
+    throw err;
+  }
   if (res.ok) {
     await recordAdminAudit({
       actor: user,
@@ -339,6 +350,9 @@ export async function mediaUploadAction(args: {
     revalidateAll();
     return { ...res, storedPath: validated.storedPath };
   }
+  // DB apply reported a failure (NOT_FOUND / FORBIDDEN / BAD_PATH): remove the
+  // just-written orphan before returning the error.
+  await deleteImageFile(validated.storedFilename);
   return res;
 }
 
