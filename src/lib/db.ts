@@ -25,12 +25,21 @@ function createClient(): PrismaClient {
     process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"];
 
   if (process.env.VITEST) {
-    // Dynamically resolve the SQLite test client so production bundles never
-    // depend on node_modules/.prisma-test (which only `pretest` generates).
+    // Load the SQLite test client that only `pretest` generates into
+    // node_modules/.prisma-test/client.
+    //
+    // WHY THE INDIRECTION (do not "simplify" this back to a static require):
+    // Next.js/webpack statically analyzes `require("<string literal>")` at BUILD
+    // time, regardless of the runtime `process.env.VITEST` guard. The test client
+    // does not exist on Vercel (only the local pretest step generates it), so a
+    // literal require makes the production build fail with
+    // "Module not found: Can't resolve '../../node_modules/.prisma-test/client'".
+    // To keep this branch test-only, we build the specifier from a runtime value
+    // and resolve it through an eval'd require so the bundler cannot follow it.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const {
-      PrismaClient: TestPrismaClient,
-    } = require("../../node_modules/.prisma-test/client");
+    const nodeRequire: NodeRequire = eval("require");
+    const testClientPath = [process.cwd(), "node_modules", ".prisma-test", "client"].join("/");
+    const { PrismaClient: TestPrismaClient } = nodeRequire(testClientPath);
     return new TestPrismaClient({ log }) as unknown as PrismaClient;
   }
 
