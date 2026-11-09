@@ -40,6 +40,10 @@ export default async function FarmPage({
     included: dict.farm.included,
     units: dict.farm.units,
     lot: dict.farm.lot,
+    traceability: dict.farm.traceability,
+    farmLabel: dict.farm.farmLabel,
+    cutLabel: dict.farm.cutLabel,
+    packLabel: dict.farm.packLabel,
   };
 
   const hasProducts = farm.packs.length > 0 || farm.cuts.length > 0;
@@ -134,61 +138,9 @@ export default async function FarmPage({
         </section>
       )}
 
-      {/* Traceability chain — rendered item-by-item from the offer + lot
-          snapshots (FEAT-007). Each offered cut shows its real
-          Farm → Lot → Tall chain; packs show each item's farm + lot. */}
-      <section className="mx-auto max-w-6xl px-6 pt-8">
-        <div className="rounded-xl bg-pasture-50 px-4 py-3 text-sm text-pasture-700 ring-1 ring-pasture-100">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold">{dict.farm.traceability}:</span>
-            <span className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200">
-              Granja
-            </span>
-            <span className="text-pasture-400">→</span>
-            <span className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200">
-              Lot
-            </span>
-            <span className="text-pasture-400">→</span>
-            <span className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200">
-              Tall
-            </span>
-            <span className="text-pasture-400">→</span>
-            <span className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200">
-              Paquet
-            </span>
-          </div>
-          {(farm.cuts.length > 0 || farm.packs.length > 0) && (
-            <ul className="mt-3 space-y-1 text-xs" data-testid="traceability-chain">
-              {farm.cuts
-                .filter((c) => c.lotReference)
-                .map((c) => (
-                  <li key={`cut-${c.id}`} data-testid="trace-item">
-                    <span className="font-semibold">{farm.name}</span>
-                    <span className="text-pasture-400"> → </span>
-                    <span className="font-mono">{c.lotReference}</span>
-                    <span className="text-pasture-400"> → </span>
-                    <span>{c.name}</span>
-                  </li>
-                ))}
-              {farm.packs.map((p) =>
-                p.items.map((it) => (
-                  <li key={`pack-${p.id}-${it.cutProductId}`} data-testid="trace-item">
-                    <span className="font-semibold">
-                      {it.farmName ?? farm.name}
-                    </span>
-                    <span className="text-pasture-400"> → </span>
-                    <span className="font-mono">{it.lotReference ?? "—"}</span>
-                    <span className="text-pasture-400"> → </span>
-                    <span>{it.name}</span>
-                    <span className="text-pasture-400"> → </span>
-                    <span>{p.name}</span>
-                  </li>
-                )),
-              )}
-            </ul>
-          )}
-        </div>
-      </section>
+      {/* FEAT-003: the farm-wide traceability list was removed from here.
+          Each cut/pack now renders its OWN Farm → Lot → Tall(→ Paquet) chain
+          inside its product card (see ProductCard CutCard / PackCard). */}
 
       {!hasProducts && (
         <p className="mx-auto max-w-6xl px-6 py-12 text-pasture-600">

@@ -99,6 +99,8 @@
     "traceability": "Traçabilitat",
     "lot": "Lot",
     "farmLabel": "Granja",
+    "cutLabel": "Tall",
+    "packLabel": "Paquet",
     "multiFarm": "Pack multi-granja",
     "noProducts": "Aquesta granja encara no té productes publicats."
   },

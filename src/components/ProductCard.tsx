@@ -1,5 +1,5 @@
 import { AddToBasketButton } from "@/components/AddToBasketButton";
-import type { OfferedCut, OfferedPack } from "@/lib/catalog";
+import type { OfferedCut, OfferedPack, ProductTrace } from "@/lib/catalog";
 
 interface ProductStrings {
   weight: string;
@@ -12,6 +12,10 @@ interface ProductStrings {
   included: string;
   units: string;
   lot: string;
+  traceability: string;
+  farmLabel: string;
+  cutLabel: string;
+  packLabel: string;
 }
 
 function Fact({ label, value }: { label: string; value: string | null }) {
@@ -20,6 +24,74 @@ function Fact({ label, value }: { label: string; value: string | null }) {
     <div className="flex justify-between gap-3 border-b border-pasture-100 py-1 last:border-0">
       <dt className="text-pasture-500">{label}</dt>
       <dd className="text-right font-medium text-pasture-800">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Per-product traceability chain (FEAT-003). Renders this specific product's
+ * Farm → Lot → Tall(→ Paquet) provenance inside its card, resolved from the
+ * lot(s) that actually back the offer. Reuses the chip/pill styling moved down
+ * from the old farm-wide section; lot references stay in monospace. `withPack`
+ * appends the Paquet node for pack-item chains.
+ */
+function TraceChain({
+  entries,
+  strings,
+  withPack,
+}: {
+  entries: ProductTrace[];
+  strings: ProductStrings;
+  withPack: boolean;
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <div
+      data-testid="product-trace"
+      className="mt-3 rounded-xl bg-pasture-50 px-3 py-2 text-xs text-pasture-700 ring-1 ring-pasture-100"
+    >
+      <span className="font-semibold">{strings.traceability}</span>
+      <ul className="mt-2 space-y-1.5">
+        {entries.map((t, i) => (
+          <li
+            key={`${t.cutName}-${t.lotReference ?? i}`}
+            data-testid="product-trace-item"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            <span
+              className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200"
+              title={strings.farmLabel}
+            >
+              {t.farmName}
+            </span>
+            <span className="text-pasture-400">→</span>
+            <span
+              className="rounded-full bg-cream-50 px-2.5 py-0.5 font-mono ring-1 ring-pasture-200"
+              title={strings.lot}
+            >
+              {t.lotReference ?? "—"}
+            </span>
+            <span className="text-pasture-400">→</span>
+            <span
+              className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200"
+              title={strings.cutLabel}
+            >
+              {t.cutName}
+            </span>
+            {withPack && t.packName && (
+              <>
+                <span className="text-pasture-400">→</span>
+                <span
+                  className="rounded-full bg-cream-50 px-2.5 py-0.5 ring-1 ring-pasture-200"
+                  title={strings.packLabel}
+                >
+                  {t.packName}
+                </span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -55,12 +127,8 @@ export function CutCard({
         <Fact label={strings.packaging} value={cut.packaging} />
         <Fact label={strings.shelfLife} value={cut.shelfLife} />
       </dl>
-      {cut.lotReference && (
-        <p className="mt-3 text-xs text-pasture-500">
-          {strings.lot}: <span className="font-mono">{cut.lotReference}</span>
-        </p>
-      )}
-      <div className="mt-auto">
+      <TraceChain entries={[cut.trace]} strings={strings} withPack={false} />
+      <div className="mt-auto pt-3">
         <AddToBasketButton
           item={{
             productId: cut.id,
@@ -133,12 +201,8 @@ export function PackCard({
           ))}
         </ul>
       </div>
-      {pack.lotReference && (
-        <p className="mt-3 text-xs text-pasture-500">
-          {strings.lot}: <span className="font-mono">{pack.lotReference}</span>
-        </p>
-      )}
-      <div className="mt-auto">
+      <TraceChain entries={pack.trace} strings={strings} withPack={true} />
+      <div className="mt-auto pt-3">
         <AddToBasketButton
           item={{
             productId: pack.id,

@@ -157,6 +157,59 @@ describe("pack spec table + traceability come from the real composition", () => 
   });
 });
 
+describe("per-product traceability resolves to the backing offer/farm (FEAT-003)", () => {
+  it("each offered cut carries its own Farm -> Lot -> Tall trace from the lot backing that offer", async () => {
+    const a = await getFarmCatalog("dyn-a");
+    const b = await getFarmCatalog("dyn-b");
+    const entA = a!.cuts.find((c) => c.name === "Entrecot")!;
+    const entB = b!.cuts.find((c) => c.name === "Entrecot")!;
+
+    // The trace is populated per-product (not aggregated at farm level) and the
+    // resolved lot matches the one that actually makes THIS offer offerable.
+    expect(entA.trace.farmName).toBe("Dyn Farm A");
+    expect(entA.trace.cutName).toBe("Entrecot");
+    expect(entA.trace.lotReference).toBe("DYNA-L1");
+    expect(entA.trace.lotReference).toBe(entA.lotReference);
+
+    expect(entB.trace.farmName).toBe("Dyn Farm B");
+    expect(entB.trace.lotReference).toBe("DYNB-L1");
+
+    // The lot each card points to genuinely belongs to that offer + farm.
+    const farmA = await prisma.farm.findFirstOrThrow({ where: { slug: "dyn-a" } });
+    const lotA = await prisma.lot.findFirstOrThrow({
+      where: { reference: entA.trace.lotReference! },
+    });
+    const offerA = await prisma.farmProductOffer.findFirstOrThrow({
+      where: { id: lotA.farmProductOfferId! },
+    });
+    expect(lotA.farmId).toBe(farmA.id);
+    expect(offerA.farmId).toBe(farmA.id);
+    expect(offerA.id).toBe(entA.id);
+  });
+
+  it("each pack item carries its own Farm -> Lot -> Tall -> Paquet trace", async () => {
+    const a = await getFarmCatalog("dyn-a");
+    const pack = a!.packs.find((p) => p.name === "Pack Dyn A")!;
+    expect(pack.trace).toHaveLength(pack.items.length);
+    const t = pack.trace[0];
+    expect(t.farmName).toBe("Dyn Farm A");
+    expect(t.cutName).toBe("Entrecot");
+    expect(t.lotReference).toBe("DYNA-L1");
+    expect(t.packName).toBe("Pack Dyn A");
+
+    // The pack item's resolved lot really belongs to the referenced offer/farm.
+    const lot = await prisma.lot.findFirstOrThrow({
+      where: { reference: t.lotReference! },
+    });
+    expect(lot.farmProductOfferId).toBeTruthy();
+    const offer = await prisma.farmProductOffer.findFirstOrThrow({
+      where: { id: lot.farmProductOfferId! },
+    });
+    expect(offer.publicName).toBe("Entrecot");
+    expect(lot.farmId).toBe(offer.farmId);
+  });
+});
+
 describe("cycle facts + remaining capacity are DB-driven", () => {
   it("reads zone, close timestamp, delivery price and free places from the DB", async () => {
     const cycle = await getActiveCycleFacts();

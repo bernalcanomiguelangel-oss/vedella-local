@@ -41,6 +41,18 @@ test("customer can browse, search, add a pack + a cut, and reserve", async ({
   });
   await expect(packCard.getByTestId("add-to-basket")).toBeVisible();
 
+  // FEAT-003: traceability now lives INSIDE each product card (not in a
+  // farm-wide list). The old farm-wide "traceability-chain" section is gone.
+  await expect(page.getByTestId("traceability-chain")).toHaveCount(0);
+  // The cut card shows its own Farm -> Lot -> Tall chain with a lot reference.
+  const cutTrace = cutCard.getByTestId("product-trace");
+  await expect(cutTrace).toBeVisible();
+  await expect(cutTrace).toContainText("Mas Vallgorguina");
+  // The pack card shows a per-item chain for each included item.
+  await expect(
+    packCard.getByTestId("product-trace-item").first(),
+  ).toBeVisible();
+
   // Add the pack; the button flips to "✓ Afegit", proving the handler ran and
   // the basket state updated (and was persisted to localStorage).
   await packCard.getByTestId("add-to-basket").click();

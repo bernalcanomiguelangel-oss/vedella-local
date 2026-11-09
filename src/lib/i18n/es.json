@@ -99,6 +99,8 @@
     "traceability": "Trazabilidad",
     "lot": "Lote",
     "farmLabel": "Granja",
+    "cutLabel": "Corte",
+    "packLabel": "Paquete",
     "multiFarm": "Pack multigranja",
     "noProducts": "Esta granja todavía no tiene productos publicados."
   },

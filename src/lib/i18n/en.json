@@ -99,6 +99,8 @@
     "traceability": "Traceability",
     "lot": "Lot",
     "farmLabel": "Farm",
+    "cutLabel": "Cut",
+    "packLabel": "Pack",
     "multiFarm": "Multi-farm pack",
     "noProducts": "This farm has no published products yet."
   },
