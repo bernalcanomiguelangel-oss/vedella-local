@@ -80,8 +80,14 @@ model Farm {
   locationDetail     String? // detailed location / address text
   latitude           Float?
   longitude          Float?
-  heroImageRef       String? // stored image reference (not a secret)
-  galleryRefs        String? // JSON array of image references
+  heroImageRef       String? // APPROVED/public hero image reference (not a secret)
+  galleryRefs        String? // APPROVED/public JSON array of image references
+  // Pending (submitted-but-unapproved) farm media. These hold a farm_manager's
+  // uploaded hero/gallery until a platform_admin approves them; only then are
+  // they copied into heroImageRef/galleryRefs (the public fields). See
+  // MEDIA_REQUIRES_APPROVAL in src/lib/media.ts.
+  pendingHeroImageRef String? // submitted hero image, not public until approved
+  pendingGalleryRefs  String? // submitted gallery JSON array, not public until approved
   contactEmail       String?
   contactPhone       String?
   websiteUrl         String?
@@ -240,6 +246,12 @@ model FarmProductOffer {
   priceAmountCents    Int // integer cents (existing convention)
   priceUnit           String // per_unit | per_kg | per_pack ...
   currency            String            @default("EUR")
+
+  // Offer media. imageRef is the APPROVED/public image path; pendingImageRef is
+  // a submitted-but-unapproved upload promoted to imageRef on platform_admin
+  // approval (see MEDIA_REQUIRES_APPROVAL in src/lib/media.ts). Both nullable.
+  imageRef        String? // APPROVED/public offer image reference
+  pendingImageRef String? // submitted offer image, not public until approved
 
   // Structured facts parsed best-effort from the legacy free-text columns.
   expectedUnitWeightMinG Int?

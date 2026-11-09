@@ -91,6 +91,9 @@ export default async function AdminProductsPage() {
                       publicName={o.publicName}
                       priceAmountCents={o.priceAmountCents}
                       lifecycle={o.lifecycle}
+                      isPlatform={isPlatform}
+                      imageRef={o.imageRef}
+                      pendingImageRef={o.pendingImageRef}
                     />
                   ))}
                 </tbody>

@@ -8,6 +8,7 @@ import {
   certApproveAction,
   certRejectAction,
 } from "@/lib/admin/manage-actions";
+import { ImageUploadControl } from "@/components/admin/ImageUploadControl";
 
 interface Cert {
   id: string;
@@ -34,7 +35,22 @@ interface FarmLike {
   contactPhone: string | null;
   websiteUrl: string | null;
   otherInformation: string | null;
+  heroImageRef: string | null;
+  pendingHeroImageRef: string | null;
+  galleryRefs: string | null;
+  pendingGalleryRefs: string | null;
   certifications: Cert[];
+}
+
+/** Parse a nullable JSON-array string of image paths; tolerant of bad data. */
+function parseGallery(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 interface Readiness {
@@ -185,6 +201,34 @@ export function FarmDetailPanel({
         >
           {isPlatform ? "Desa" : "Envia a revisió"}
         </button>
+      </section>
+
+      {/* Farm images (hero + gallery). Uploads are SUBMITTED and only public
+          after platform_admin approval, by default. */}
+      <section className="rounded-2xl border border-bark-200 bg-white p-4">
+        <h3 className="font-semibold text-bark-800">Imatges de la granja</h3>
+        <p className="text-xs text-bark-500">
+          Puja la imatge de portada i les fotos de la galeria. S&apos;envien a
+          revisió i es publiquen quan la plataforma les aprova.
+        </p>
+        <div className="mt-3 space-y-3">
+          <ImageUploadControl
+            target="farm_hero"
+            targetId={farm.id}
+            title="Imatge de portada"
+            currentRef={farm.heroImageRef}
+            pendingRef={farm.pendingHeroImageRef}
+            isPlatform={isPlatform}
+          />
+          <ImageUploadControl
+            target="farm_gallery"
+            targetId={farm.id}
+            title="Galeria (afegeix una foto)"
+            currentRef={parseGallery(farm.galleryRefs)[0] ?? null}
+            pendingRef={parseGallery(farm.pendingGalleryRefs).slice(-1)[0] ?? null}
+            isPlatform={isPlatform}
+          />
+        </div>
       </section>
 
       {/* "Other information" — platform_admin only */}

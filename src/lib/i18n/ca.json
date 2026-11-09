@@ -102,6 +102,23 @@
     "multiFarm": "Pack multi-granja",
     "noProducts": "Aquesta granja encara no té productes publicats."
   },
+  "media": {
+    "heroTitle": "Imatge de portada de la granja",
+    "galleryTitle": "Galeria de la granja",
+    "offerImageTitle": "Imatge del producte",
+    "upload": "Puja una imatge",
+    "uploading": "Pujant…",
+    "current": "Imatge actual",
+    "pendingBadge": "Pendent d'aprovació",
+    "pendingNote": "Enviada; serà pública quan la plataforma l'aprovi.",
+    "publishedNote": "Publicada.",
+    "allowed": "Només .jpg, .png o .webp (màx. 5 MB).",
+    "approve": "Aprova",
+    "reject": "Rebutja",
+    "approved": "Imatge aprovada i publicada.",
+    "rejected": "Imatge pendent rebutjada.",
+    "error": "No s'ha pogut pujar la imatge."
+  },
   "product": {
     "weight": "Pes",
     "thickness": "Gruix",

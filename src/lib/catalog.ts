@@ -82,6 +82,8 @@ export interface OfferedCut {
   packaging: string | null;
   shelfLife: string | null;
   lotReference: string | null;
+  /** APPROVED/public image path only (never a pending upload). */
+  imageRef: string | null;
 }
 
 export interface OfferedPackItem {
@@ -106,6 +108,8 @@ export interface OfferedPack {
   lotReference: string | null;
   /** True for a pack whose items span more than one farm. */
   isMultiFarm?: boolean;
+  /** APPROVED/public image path only (never a pending upload). */
+  imageRef: string | null;
 }
 
 export interface OfferedFarm {
@@ -118,6 +122,10 @@ export interface OfferedFarm {
   foundedYear: number;
   animalCount: number;
   story: string;
+  /** APPROVED/public hero image path only (never pendingHeroImageRef). */
+  heroImageRef: string | null;
+  /** APPROVED/public gallery image paths only (never pendingGalleryRefs). */
+  galleryRefs: string[];
 }
 
 export interface PublicCertification {
@@ -189,7 +197,25 @@ export async function listOfferedFarms(
     foundedYear: f.foundedYear,
     animalCount: f.animalCount,
     story: resolveContent(index, "farm", f.id, "story", locale, f.story),
+    // PUBLIC image fields only; pending* are never exposed here.
+    heroImageRef: f.heroImageRef ?? null,
+    galleryRefs: parsePublicGallery(f.galleryRefs),
   }));
+}
+
+/**
+ * Parse the farm's PUBLIC gallery JSON-array field into a string[]. Only the
+ * approved `galleryRefs` column is ever passed here; `pendingGalleryRefs` is
+ * never read on any public path. Tolerant of malformed data.
+ */
+function parsePublicGallery(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -285,6 +311,8 @@ async function getFarmCatalogLegacy(
         packaging: p.packaging,
         shelfLife: p.shelfLife,
         lotReference: lotRef,
+        // Legacy Product has no image column.
+        imageRef: null,
       });
     }
   }
@@ -322,6 +350,7 @@ async function getFarmCatalogLegacy(
       weight: p.weight,
       items,
       lotReference: firstCut?.lotReference ?? null,
+      imageRef: null,
     });
   }
 
@@ -341,6 +370,8 @@ async function getFarmCatalogLegacy(
     foundedYear: farm.foundedYear,
     animalCount: farm.animalCount,
     story: resolveContent(index, "farm", farm.id, "story", locale, farm.story),
+    heroImageRef: farm.heroImageRef ?? null,
+    galleryRefs: parsePublicGallery(farm.galleryRefs),
     packs,
     cuts,
     certifications: farm.certifications.map((c) => ({
@@ -484,6 +515,8 @@ export async function getFarmCatalogFromOffers(
         ? `${o.minimumShelfLifeDays} dies en fred`
         : null,
       lotReference: lotRef,
+      // PUBLIC/approved image only; pendingImageRef is never exposed.
+      imageRef: o.imageRef ?? null,
     });
   }
   const offeredOfferIds = new Set(cuts.map((c) => c.id));
@@ -569,6 +602,7 @@ export async function getFarmCatalogFromOffers(
       items,
       lotReference: representativeLot,
       isMultiFarm: pk.isMultiFarm,
+      imageRef: null,
     });
   }
   // Transitional union (M8): a legacy Product that is approved+active and backed
@@ -626,6 +660,7 @@ export async function getFarmCatalogFromOffers(
       packaging: p.packaging,
       shelfLife: p.shelfLife,
       lotReference: lotRef,
+      imageRef: null,
     });
   }
 
@@ -645,6 +680,8 @@ export async function getFarmCatalogFromOffers(
     foundedYear: farm.foundedYear,
     animalCount: farm.animalCount,
     story: resolveContent(index, "farm", farm.id, "story", locale, farm.story),
+    heroImageRef: farm.heroImageRef ?? null,
+    galleryRefs: parsePublicGallery(farm.galleryRefs),
     packs,
     cuts,
     certifications: farm.certifications.map((c) => ({

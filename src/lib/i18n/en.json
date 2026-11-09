@@ -102,6 +102,23 @@
     "multiFarm": "Multi-farm pack",
     "noProducts": "This farm has no published products yet."
   },
+  "media": {
+    "heroTitle": "Farm hero image",
+    "galleryTitle": "Farm gallery",
+    "offerImageTitle": "Product image",
+    "upload": "Upload an image",
+    "uploading": "Uploading…",
+    "current": "Current image",
+    "pendingBadge": "Pending approval",
+    "pendingNote": "Submitted; it will be public once the platform approves it.",
+    "publishedNote": "Published.",
+    "allowed": "Only .jpg, .png or .webp (max 5 MB).",
+    "approve": "Approve",
+    "reject": "Reject",
+    "approved": "Image approved and published.",
+    "rejected": "Pending image rejected.",
+    "error": "Could not upload the image."
+  },
   "product": {
     "weight": "Weight",
     "thickness": "Thickness",
