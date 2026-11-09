@@ -48,8 +48,14 @@ npm run dev
 
 > **Hosting.** To put the app online for free (Vercel + Neon Postgres), follow the
 > step-by-step guide in [`docs/deploy-vercel-neon.md`](docs/deploy-vercel-neon.md).
-> The automated test suite needs no Postgres: it runs on a local SQLite test client
-> (`npm test`), so `npm test` works fully offline with zero setup.
+> On Vercel the `vercel-build` script runs `prisma migrate deploy` and then the seed
+> (`tsx prisma/seed.ts`) before `next build`, so the first deploy creates the schema
+> AND the demo data (admin `miguel@admin.com` plus the two example farms) with no
+> manual step. The seed is idempotent, so redeploys are safe no-ops that never
+> duplicate or wipe data; a manual re-seed (`npm run seed`) is only needed in the
+> rare case you want to seed a database by hand. The automated test suite needs no
+> Postgres: it runs on a local SQLite test client (`npm test`), fully offline with
+> zero setup.
 
 The app runs end-to-end with **no API key**. A real AI provider is only used when
 `AI_API_KEY` is set *and* the relevant feature flag is enabled.

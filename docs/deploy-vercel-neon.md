@@ -95,45 +95,50 @@ Notes:
 
 1. Click **Deploy** (or push a commit, which triggers a deploy automatically).
 2. During the build, Vercel runs the project's `vercel-build` script, which does
-   three things in order:
+   four things in order:
    - `prisma generate` builds the database client.
    - `prisma migrate deploy` applies the committed Postgres migrations to your Neon
      database, so all tables and constraints are created automatically on the first
      deploy.
+   - `tsx prisma/seed.ts` runs the seed, which creates the admin and the two example
+     farms automatically on the first deploy (see Step 5 for exactly what it creates).
    - `next build` builds the web app.
 3. Wait for the deploy to finish. Vercel then gives you a public URL that looks like
    `https://vedella-local-xxxx.vercel.app`.
 
-At this point the database structure exists, but it has no example data yet. That
-comes next.
+At this point the database structure AND the example data both exist. You can go
+straight to Step 6 and log in.
 
 ---
 
-## Step 5. Run the SEED once (creates the admin and the two example farms)
+## Step 5. The seed runs automatically on the first deploy
 
-The seed creates `miguel@admin.com`, the two example farms **Mas Vallgorguina** and
-**Cal Serrat del Bosc** (with their packs, cuts, and lots), and the active cycle
-`Cicle novembre 2026`. Run it ONE time. Pick whichever option is easier for you.
+You do NOT need to run the seed by hand. The `vercel-build` script runs it for you
+on every deploy, so the first deploy already creates:
 
-### Option A (recommended): run it from your computer against Neon
+- the admin account `miguel@admin.com` (with the temporary password you set in
+  `SEED_ADMIN_TEMP_PASSWORD`, forced to change on first login),
+- the two example farms **Mas Vallgorguina** and **Cal Serrat del Bosc** with their
+  packs, cuts, and lots,
+- the active reservation cycle `Cicle novembre 2026`.
 
-1. Install a recent Node.js (version 22 or newer) if you do not have it.
-2. Download the project code to your computer. Either download the ZIP from the
-   GitHub repository page, or if you have `git` installed run:
+### Redeploys are safe
 
-   ```bash
-   git clone https://github.com/bernalcanomiguelangel-oss/vedella-local.git
-   cd vedella-local
-   ```
+The seed is **idempotent**: if `miguel@admin.com` or the farm `mas-vallgorguina`
+already exists, it does nothing and simply logs that the data is already there. So
+every later deploy is a no-op for the data: it will NOT duplicate anything and will
+NOT wipe anything. This is why it is safe to keep the seed in the build and let it
+run on every deploy.
 
-3. Install dependencies:
+### Manual re-seed (only if you ever need it)
 
-   ```bash
-   npm install
-   ```
+You normally never need this. If you ever want to run the seed by hand, for example
+against a Neon dev branch from your own computer, you can:
 
-4. Run the seed with the Neon strings set for this one command. Use the SAME two
-   strings you put in Vercel. On macOS or Linux:
+1. Install a recent Node.js (version 22 or newer).
+2. Get the project code (download the ZIP from GitHub, or `git clone` it) and run
+   `npm install`.
+3. Run the seed with the SAME two Neon strings you put in Vercel. On macOS or Linux:
 
    ```bash
    DATABASE_URL="your-pooled-neon-string" \
@@ -151,20 +156,8 @@ The seed creates `miguel@admin.com`, the two example farms **Mas Vallgorguina** 
    npm run seed
    ```
 
-   Use the same `SEED_ADMIN_TEMP_PASSWORD` value you set in Vercel so the admin
-   password matches.
-
-### Option B: run it as a one-off command in Vercel
-
-If your Vercel plan gives you a deployment shell / command runner, run `npm run seed`
-there with the same environment variables already set on the project. If that option
-is not available to you, use Option A, which always works.
-
-### Good to know
-
-The seed is **idempotent**: if `miguel@admin.com` or the farm `mas-vallgorguina`
-already exists, it does nothing and simply logs that the data is already there. So
-running the seed a second time will NOT duplicate data and will NOT wipe anything.
+   Thanks to the idempotency guard above, running it again against a database that
+   already has the demo data simply does nothing.
 
 ---
 

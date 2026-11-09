@@ -123,10 +123,73 @@ async function addCheckConstraints(prisma: PrismaClient): Promise<void> {
   // Tables are empty at this point (freshly pushed), so copying is trivial.
   await prisma.$executeRawUnsafe("PRAGMA foreign_keys=OFF;");
 
+  // Product: basePriceCents >= 0 (CHECK) plus the (id, farmId) candidate key so
+  // Lot's composite FK can target it. Rebuilt BEFORE the Lot rebuild below so
+  // the Lot_productId_farmId_fkey target resolves against this fresh table.
+  // The table is empty at setup time, so no row copy is needed. All columns,
+  // the Farm FK, and the two indexes created by prisma db push are preserved.
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE "Product_new" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "farmId" TEXT NOT NULL,
+      "kind" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "description" TEXT NOT NULL DEFAULT '',
+      "basePriceCents" INTEGER NOT NULL,
+      "weight" TEXT,
+      "thickness" TEXT,
+      "maturation" TEXT,
+      "packaging" TEXT,
+      "shelfLife" TEXT,
+      "lifecycle" TEXT NOT NULL DEFAULT 'draft',
+      "isApproved" BOOLEAN NOT NULL DEFAULT false,
+      "isActive" BOOLEAN NOT NULL DEFAULT false,
+      "isTest" BOOLEAN NOT NULL DEFAULT false,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL,
+      CONSTRAINT "Product_farmId_fkey" FOREIGN KEY ("farmId") REFERENCES "Farm" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      CONSTRAINT "Product_basePriceCents_nonneg" CHECK ("basePriceCents" >= 0)
+    );
+  `);
+  await prisma.$executeRawUnsafe(`DROP TABLE "Product";`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "Product_new" RENAME TO "Product";`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX "Product_farmId_idx" ON "Product"("farmId");`);
   // R9 backstop: Product needs a (id, farmId) candidate key so Lot's composite
   // FK can target it (prisma db push does not add this index).
   await prisma.$executeRawUnsafe(
     `CREATE UNIQUE INDEX IF NOT EXISTS "Product_id_farmId_key" ON "Product"("id", "farmId");`,
+  );
+
+  // OrderItem: quantity >= 1 (CHECK). Rebuilt preserving all columns, the Order
+  // FK, the FarmProductOffer FK (ON DELETE SET NULL), and both indexes created
+  // by prisma db push. productId stays a bare snapshot column with no FK (R14).
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE "OrderItem_new" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "orderId" TEXT NOT NULL,
+      "productId" TEXT,
+      "nameSnapshot" TEXT NOT NULL,
+      "priceCentsSnapshot" INTEGER NOT NULL,
+      "lotReferenceSnapshot" TEXT NOT NULL DEFAULT '',
+      "quantity" INTEGER NOT NULL DEFAULT 1,
+      "farmProductOfferId" TEXT,
+      "farmId" TEXT,
+      "productDefinitionId" TEXT,
+      "actualWeightG" INTEGER,
+      "farmNameSnapshot" TEXT,
+      "definitionNameSnapshot" TEXT,
+      CONSTRAINT "OrderItem_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      CONSTRAINT "OrderItem_farmProductOfferId_fkey" FOREIGN KEY ("farmProductOfferId") REFERENCES "FarmProductOffer" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "OrderItem_quantity_positive" CHECK ("quantity" >= 1)
+    );
+  `);
+  await prisma.$executeRawUnsafe(`DROP TABLE "OrderItem";`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "OrderItem_new" RENAME TO "OrderItem";`);
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX "OrderItem_orderId_idx" ON "OrderItem"("orderId");`,
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX "OrderItem_farmProductOfferId_idx" ON "OrderItem"("farmProductOfferId");`,
   );
 
   // FarmProductOffer candidate key so Lot's new composite FK can target it. db

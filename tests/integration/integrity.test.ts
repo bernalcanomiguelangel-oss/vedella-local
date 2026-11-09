@@ -36,6 +36,119 @@ describe("R8: every product belongs to a farm", () => {
   });
 });
 
+describe("Product.basePriceCents is non-negative (DB CHECK)", () => {
+  it("DB CHECK rejects a negative base price", async () => {
+    // Proves Product_basePriceCents_nonneg is enforced by the DATABASE, not only
+    // by the application-level BAD_PRICE guard. A write path that skipped the
+    // guard still cannot persist a negative price. Would fail if the CHECK were
+    // reverted or its operator/column were wrong.
+    const farm = await makeFarm(db, { slug: "farm-price-neg" });
+    await expect(
+      db.product.create({
+        data: {
+          farmId: farm.id,
+          kind: "cut",
+          name: "Negative price",
+          basePriceCents: -1,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts a zero and a positive base price (positive control)", async () => {
+    const farm = await makeFarm(db, { slug: "farm-price-ok" });
+    await expect(
+      db.product.create({
+        data: {
+          farmId: farm.id,
+          kind: "cut",
+          name: "Zero price",
+          basePriceCents: 0,
+        },
+      }),
+    ).resolves.toBeTruthy();
+    await expect(
+      db.product.create({
+        data: {
+          farmId: farm.id,
+          kind: "cut",
+          name: "Positive price",
+          basePriceCents: 1438,
+        },
+      }),
+    ).resolves.toBeTruthy();
+  });
+});
+
+describe("OrderItem.quantity is positive (DB CHECK)", () => {
+  async function seedOrder(slug: string) {
+    const farm = await makeFarm(db, { slug });
+    const product = await makeProduct(db, farm.id, { basePriceCents: 1438 });
+    await makeLot(db, farm.id, product.id, { reference: `${slug}-LOT`, units: 10 });
+    const cycle = await makeCycle(db, { freePlaces: 5 });
+    const order = await db.order.create({
+      data: {
+        cycleId: cycle.id,
+        lotReferenceSnapshot: `${slug}-LOT`,
+        subtotalCents: 1438,
+        totalCents: 2038,
+      },
+    });
+    return { order, product };
+  }
+
+  it("DB CHECK rejects an item with quantity 0", async () => {
+    // Proves OrderItem_quantity_positive is enforced by the DATABASE. A reserve
+    // path that forgot to validate quantity still cannot persist a zero-quantity
+    // line. Would fail if the CHECK (quantity >= 1) were reverted.
+    const { order, product } = await seedOrder("order-qty-zero");
+    await expect(
+      db.orderItem.create({
+        data: {
+          orderId: order.id,
+          productId: product.id,
+          nameSnapshot: "Zero quantity",
+          priceCentsSnapshot: 1438,
+          lotReferenceSnapshot: "order-qty-zero-LOT",
+          quantity: 0,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("DB CHECK rejects an item with a negative quantity", async () => {
+    const { order, product } = await seedOrder("order-qty-neg");
+    await expect(
+      db.orderItem.create({
+        data: {
+          orderId: order.id,
+          productId: product.id,
+          nameSnapshot: "Negative quantity",
+          priceCentsSnapshot: 1438,
+          lotReferenceSnapshot: "order-qty-neg-LOT",
+          quantity: -1,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts an item with quantity 1 (positive control)", async () => {
+    const { order, product } = await seedOrder("order-qty-ok");
+    await expect(
+      db.orderItem.create({
+        data: {
+          orderId: order.id,
+          productId: product.id,
+          nameSnapshot: "Valid quantity",
+          priceCentsSnapshot: 1438,
+          lotReferenceSnapshot: "order-qty-ok-LOT",
+          quantity: 1,
+        },
+      }),
+    ).resolves.toBeTruthy();
+  });
+});
+
 describe("R9: lot.farmId == product.farmId", () => {
   it("guard rejects a farm mismatch", async () => {
     const farmA = await makeFarm(db, { slug: "farm-a-r9" });
