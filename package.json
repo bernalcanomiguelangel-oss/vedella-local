@@ -6,15 +6,22 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "vercel-build": "prisma generate && prisma migrate deploy && tsx prisma/seed.ts && next build",
+    "postinstall": "prisma generate",
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
+    "prisma:generate:test": "prisma generate --schema prisma/schema.test.prisma",
+    "pretest": "npm run prisma:generate:test",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

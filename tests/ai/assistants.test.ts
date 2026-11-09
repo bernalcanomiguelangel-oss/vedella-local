@@ -25,7 +25,7 @@ process.env.DATABASE_URL = `file:${dbPath}`;
 delete process.env.AI_API_KEY;
 process.env.AI_PROVIDER = "mock";
 
-execSync("npx prisma db push --skip-generate --accept-data-loss", {
+execSync("npx prisma db push --schema prisma/schema.test.prisma --skip-generate --accept-data-loss", {
   cwd: projectRoot,
   env: { ...process.env },
   stdio: "ignore",

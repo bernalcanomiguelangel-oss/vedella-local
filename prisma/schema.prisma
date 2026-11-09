@@ -10,8 +10,12 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Neon's pooled (PgBouncer) endpoint cannot run DDL migrations, so Prisma
+  // Migrate uses a direct (non-pooled) connection via DIRECT_URL. At runtime the
+  // app uses the pooled DATABASE_URL.
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------

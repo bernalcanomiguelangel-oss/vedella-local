@@ -29,7 +29,7 @@ const dbPath = join(dir, "test.db");
 process.env.DATABASE_URL = `file:${dbPath}`;
 process.env.PUBLIC_OFFER_MODEL_ENABLED = "true"; // offer read path ON
 
-execSync("npx prisma db push --skip-generate --accept-data-loss", {
+execSync("npx prisma db push --schema prisma/schema.test.prisma --skip-generate --accept-data-loss", {
   cwd: projectRoot,
   env: { ...process.env },
   stdio: "ignore",

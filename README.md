@@ -13,7 +13,8 @@ provider.
 
 - **Next.js (App Router) + TypeScript**
 - **Tailwind CSS** — warm pasture/beef palette
-- **Prisma + SQLite** — zero external services; DB file at `prisma/dev.db`
+- **Prisma + PostgreSQL**. PostgreSQL in production (Neon). The automated test
+  suite runs on a local **SQLite test client** for zero-config offline testing.
 - **Zod** — input and AI-output validation
 - **Vitest** (unit/integration) + **Playwright** (e2e)
 
@@ -28,15 +29,15 @@ provider.
 # 1. Install dependencies
 npm install
 
-# 2. Configure environment (defaults run fully offline with the mock AI provider)
+# 2. Configure environment (the AI layer runs fully offline with the mock provider)
 cp .env.example .env
+#    The committed schema is Postgres, so set DATABASE_URL (pooled) and DIRECT_URL
+#    (direct) to a Postgres/Neon connection string. A free Neon dev branch works;
+#    paste both strings into your git-ignored .env. See docs/deploy-vercel-neon.md.
 
-# 3. Create the SQLite database from the committed migrations and generate the client
-#    (migrations under prisma/migrations/ are the source of truth; dev.db is
-#    git-ignored and rebuilt from them).
+# 3. Apply the committed migrations and generate the client
+#    (migrations under prisma/migrations/ are the source of truth).
 npx prisma migrate deploy        # apply migrations to an existing/empty DB
-#   — or, to rebuild a dev DB from scratch:
-#   npx prisma migrate reset --force --skip-seed
 
 # 4. Seed two fantasy farms, packs, cuts, lots, and one active reservation cycle
 npm run seed
@@ -44,6 +45,17 @@ npm run seed
 # 5. Run the dev server
 npm run dev
 ```
+
+> **Hosting.** To put the app online for free (Vercel + Neon Postgres), follow the
+> step-by-step guide in [`docs/deploy-vercel-neon.md`](docs/deploy-vercel-neon.md).
+> On Vercel the `vercel-build` script runs `prisma migrate deploy` and then the seed
+> (`tsx prisma/seed.ts`) before `next build`, so the first deploy creates the schema
+> AND the demo data (admin `miguel@admin.com` plus the two example farms) with no
+> manual step. The seed is idempotent, so redeploys are safe no-ops that never
+> duplicate or wipe data; a manual re-seed (`npm run seed`) is only needed in the
+> rare case you want to seed a database by hand. The automated test suite needs no
+> Postgres: it runs on a local SQLite test client (`npm test`), fully offline with
+> zero setup.
 
 The app runs end-to-end with **no API key**. A real AI provider is only used when
 `AI_API_KEY` is set *and* the relevant feature flag is enabled.
@@ -174,14 +186,16 @@ inspector findings, see [`docs/aesthetic-review.md`](docs/aesthetic-review.md).
 
 ## Scripts
 
-| Script             | Description                                      |
-| ------------------ | ------------------------------------------------ |
-| `npm run dev`      | Start the Next.js dev server                     |
-| `npm run build`    | Generate the Prisma client and build the app     |
-| `npm start`        | Start the production server                      |
-| `npm run seed`     | Seed the database (`prisma/seed.ts`)             |
-| `npm test`         | Run unit/integration tests (Vitest)              |
-| `npm run test:e2e` | Run end-to-end tests (Playwright)                |
+| Script                         | Description                                          |
+| ------------------------------ | ---------------------------------------------------- |
+| `npm run dev`               | Start the Next.js dev server                           |
+| `npm run build`             | Generate the Prisma client and build the app           |
+| `npm run vercel-build`      | Production build: generate client, apply migrations, build |
+| `npm start`                 | Start the production server                            |
+| `npm run seed`              | Seed the database (`prisma/seed.ts`)                   |
+| `npm run prisma:generate:test` | Generate the SQLite test client (runs via `pretest`) |
+| `npm test`                  | Run unit/integration tests (Vitest, on SQLite)         |
+| `npm run test:e2e`          | Run end-to-end tests (Playwright)                      |
 
 ## Seeded data
 
