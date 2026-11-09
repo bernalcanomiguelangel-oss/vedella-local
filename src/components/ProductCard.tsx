@@ -1,5 +1,6 @@
 import { AddToBasketButton } from "@/components/AddToBasketButton";
 import type { OfferedCut, OfferedPack, ProductTrace } from "@/lib/catalog";
+import { isPublicImageRef, imageAltText } from "@/lib/image-display";
 
 interface ProductStrings {
   weight: string;
@@ -16,6 +17,49 @@ interface ProductStrings {
   farmLabel: string;
   cutLabel: string;
   packLabel: string;
+}
+
+/**
+ * Product media box with a consistent 4:3 aspect ratio. Shows the offer's
+ * APPROVED image when present (informative, so it carries meaningful alt text)
+ * and otherwise renders a tasteful gradient placeholder marked decorative, so
+ * cards stay uniform for seeded products that have no uploaded photo.
+ */
+function ProductMedia({
+  imageRef,
+  name,
+  variant,
+}: {
+  imageRef: string | null;
+  name: string;
+  variant: "cut" | "pack";
+}) {
+  const hasImage = isPublicImageRef(imageRef);
+  const placeholder =
+    variant === "pack"
+      ? "bg-gradient-to-br from-beef-100 via-cream-100 to-gold-100"
+      : "bg-gradient-to-br from-cream-100 via-gold-50 to-beef-50";
+  return (
+    <div
+      className={`relative mb-4 aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-pasture-100 ${placeholder}`}
+    >
+      {hasImage ? (
+        <img
+          src={imageRef as string}
+          alt={imageAltText(name)}
+          loading="lazy"
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 flex items-center justify-center text-4xl opacity-40"
+        >
+          {variant === "pack" ? "🥩" : "🍖"}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Fact({ label, value }: { label: string; value: string | null }) {
@@ -111,8 +155,9 @@ export function CutCard({
     <div
       data-testid="cut-card"
       data-product-name={cut.name}
-      className="flex flex-col rounded-2xl bg-cream-50 p-5 shadow-sm ring-1 ring-pasture-100"
+      className="flex flex-col rounded-2xl bg-cream-50 p-5 shadow-sm ring-1 ring-pasture-100 transition hover:shadow-md"
     >
+      <ProductMedia imageRef={cut.imageRef} name={cut.name} variant="cut" />
       <div className="flex items-start justify-between gap-2">
         <h4 className="font-bold text-pasture-900">{cut.name}</h4>
         <span className="rounded-full bg-beef-50 px-2.5 py-1 text-sm font-bold text-beef-700">
@@ -162,8 +207,9 @@ export function PackCard({
     <div
       data-testid="pack-card"
       data-product-name={pack.name}
-      className="flex flex-col rounded-2xl bg-gradient-to-b from-cream-50 to-cream-100 p-5 shadow-md ring-1 ring-pasture-200"
+      className="flex flex-col rounded-2xl bg-gradient-to-b from-cream-50 to-cream-100 p-5 shadow-md ring-1 ring-pasture-200 transition hover:shadow-lg"
     >
+      <ProductMedia imageRef={pack.imageRef} name={pack.name} variant="pack" />
       <div className="flex items-start justify-between gap-2">
         <h4 className="text-lg font-bold text-pasture-900">{pack.name}</h4>
         <span className="rounded-full bg-beef-600 px-3 py-1 text-sm font-bold text-cream-50 shadow">

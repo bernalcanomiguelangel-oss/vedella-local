@@ -39,7 +39,7 @@ export default async function HomePage({
           <p className="mb-3 inline-block rounded-full bg-cream-50/15 px-3 py-1 text-xs font-semibold uppercase tracking-widest">
             {dict.hero.eyebrow}
           </p>
-          <h1 className="max-w-2xl text-4xl font-extrabold leading-tight sm:text-5xl">
+          <h1 className="max-w-2xl font-display text-4xl font-extrabold leading-tight sm:text-5xl">
             {dict.hero.title}
           </h1>
           <p className="mt-4 max-w-xl text-lg text-cream-100/90">
@@ -168,7 +168,7 @@ export default async function HomePage({
 
       {/* Values */}
       <section className="mx-auto max-w-6xl px-6 py-14">
-        <h2 className="text-center text-2xl font-bold text-pasture-900">
+        <h2 className="text-center font-display text-2xl font-bold text-pasture-900">
           {dict.home.valuesTitle}
         </h2>
         <div className="mt-8 grid gap-6 sm:grid-cols-3">
@@ -198,7 +198,7 @@ export default async function HomePage({
       {/* Farms */}
       <section id="farms" className="mx-auto max-w-6xl px-6 py-6">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-pasture-900">
+          <h2 className="font-display text-2xl font-bold text-pasture-900">
             {dict.home.farmsTitle}
           </h2>
           <p className="text-pasture-600">{dict.home.farmsSubtitle}</p>

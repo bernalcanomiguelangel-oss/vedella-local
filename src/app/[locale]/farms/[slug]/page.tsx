@@ -4,6 +4,11 @@ import { CutCard, PackCard } from "@/components/ProductCard";
 import { getFarmCatalog } from "@/lib/catalog";
 import { getDictionary, resolveLocale } from "@/lib/i18n";
 import { startPageSession, emit } from "@/lib/analytics-session";
+import {
+  isPublicImageRef,
+  publicImageRefs,
+  imageAltText,
+} from "@/lib/image-display";
 
 export const dynamic = "force-dynamic";
 
@@ -47,20 +52,43 @@ export default async function FarmPage({
   };
 
   const hasProducts = farm.packs.length > 0 || farm.cuts.length > 0;
+  const hasHero = isPublicImageRef(farm.heroImageRef);
+  const gallery = publicImageRefs(farm.galleryRefs);
 
   return (
     <main>
-      {/* Farm header */}
+      {/* Farm header. When an APPROVED hero image exists it fills the banner
+          behind a dark scrim that keeps the cream text readable; otherwise the
+          established pasture gradient is used as a graceful fallback so seeded
+          farms with no upload still look polished. */}
       <section className="relative overflow-hidden bg-gradient-to-br from-pasture-600 to-pasture-800 text-cream-50">
-        <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_20%_30%,white_0,transparent_40%),radial-gradient(circle_at_80%_70%,white_0,transparent_35%)]" />
+        {hasHero ? (
+          <>
+            <img
+              src={farm.heroImageRef as string}
+              alt={imageAltText(farm.name)}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            {/* Scrim: decorative, ensures text contrast over the photo. */}
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 bg-gradient-to-br from-pasture-900/80 via-pasture-900/55 to-pasture-800/70"
+            />
+          </>
+        ) : (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_20%_30%,white_0,transparent_40%),radial-gradient(circle_at_80%_70%,white_0,transparent_35%)]"
+          />
+        )}
         <div className="relative mx-auto max-w-6xl px-6 py-14">
           <Link
             href={`/${locale}`}
-            className="text-sm text-cream-100/80 hover:text-cream-50"
+            className="rounded text-sm text-cream-100/80 hover:text-cream-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream-50 focus-visible:ring-offset-2 focus-visible:ring-offset-pasture-800"
           >
             ← {dict.farm.backToMarket}
           </Link>
-          <h1 className="mt-3 text-4xl font-extrabold">{farm.name}</h1>
+          <h1 className="mt-3 font-display text-4xl font-extrabold">{farm.name}</h1>
           <p className="mt-1 text-cream-100/90">
             {farm.town} · {farm.comarca}
           </p>
@@ -142,6 +170,35 @@ export default async function FarmPage({
           Each cut/pack now renders its OWN Farm → Lot → Tall(→ Paquet) chain
           inside its product card (see ProductCard CutCard / PackCard). */}
 
+      {/* Farm gallery (FEAT-004): only APPROVED gallery photos are ever exposed
+          here. Rendered with a consistent 4:3 aspect ratio; absent entirely for
+          seeded farms with no uploads. */}
+      {gallery.length > 0 && (
+        <section
+          data-testid="farm-gallery"
+          className="mx-auto max-w-6xl px-6 pt-8"
+        >
+          <h2 className="mb-4 text-2xl font-bold text-pasture-900">
+            {dict.media.galleryTitle}
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {gallery.map((src, i) => (
+              <div
+                key={`${src}-${i}`}
+                className="aspect-[4/3] overflow-hidden rounded-2xl ring-1 ring-pasture-100"
+              >
+                <img
+                  src={src}
+                  alt={imageAltText(farm.name, `${i + 1}`)}
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {!hasProducts && (
         <p className="mx-auto max-w-6xl px-6 py-12 text-pasture-600">
           {dict.farm.noProducts}
@@ -151,7 +208,7 @@ export default async function FarmPage({
       {/* Packs */}
       {farm.packs.length > 0 && (
         <section className="mx-auto max-w-6xl px-6 py-8">
-          <h2 className="mb-5 text-2xl font-bold text-pasture-900">
+          <h2 className="mb-5 font-display text-2xl font-bold text-pasture-900">
             {dict.farm.packsTitle}
           </h2>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -171,7 +228,7 @@ export default async function FarmPage({
       {/* Cuts */}
       {farm.cuts.length > 0 && (
         <section className="mx-auto max-w-6xl px-6 py-8">
-          <h2 className="mb-2 text-2xl font-bold text-pasture-900">
+          <h2 className="mb-2 font-display text-2xl font-bold text-pasture-900">
             {dict.farm.cutsTitle}
           </h2>
           <p className="mb-5 text-sm text-pasture-500">
