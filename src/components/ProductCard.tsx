@@ -112,9 +112,21 @@ export function PackCard({
         </p>
         <ul className="mt-1 space-y-1 text-sm text-pasture-800">
           {pack.items.map((it) => (
-            <li key={it.cutProductId} className="flex justify-between">
-              <span>{it.name}</span>
-              <span className="text-pasture-500">
+            <li key={it.cutProductId} className="flex justify-between gap-2">
+              <span>
+                {it.name}
+                {pack.isMultiFarm && it.farmName && (
+                  <span className="ml-1 text-xs text-pasture-500">
+                    · {it.farmName}
+                  </span>
+                )}
+                {it.lotReference && (
+                  <span className="ml-1 font-mono text-xs text-pasture-400">
+                    {it.lotReference}
+                  </span>
+                )}
+              </span>
+              <span className="whitespace-nowrap text-pasture-500">
                 {it.quantity} {strings.units}
               </span>
             </li>

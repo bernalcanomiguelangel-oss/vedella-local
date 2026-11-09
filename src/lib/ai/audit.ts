@@ -9,8 +9,9 @@
  * API key (keys live only in the real provider, read lazily from env).
  */
 import { prisma } from "@/lib/db";
+import type { AiUseCase } from "./provider";
 
-export type AiUseCase = "translate" | "metrics" | "receipt";
+export type { AiUseCase };
 export type AiOutcome = "ok" | "fallback" | "invalid" | "error";
 
 export interface AiRunRecord {

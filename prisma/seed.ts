@@ -10,8 +10,29 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { validateLot } from "../src/lib/validateLot";
+import { hashPassword } from "../src/lib/password";
+import { backfillOffers, verifyBackfill } from "../src/lib/migrate/backfill-offers";
+import { populateCycleOfferAvailability } from "../src/lib/admin/manage";
+import {
+  backfillOrders,
+  verifyOrderTotalsUnchanged,
+} from "../src/lib/migrate/backfill-orders";
+import { ensureDefaultSettings } from "../src/lib/admin/settings";
 
 const prisma = new PrismaClient();
+
+// Temporary seed password for every seeded identity (including the main admin).
+// Sourced from an env var so a deployment can override it; otherwise a clearly
+// NON-SECRET, documented development default is used. Because this is a known,
+// shared temporary value, EVERY seeded user starts with mustChangePassword=true
+// and must set their own password on first login. The raw value is NEVER logged.
+const SEED_TEMP_PASSWORD =
+  process.env.SEED_ADMIN_TEMP_PASSWORD?.trim() || "ChangeMe123!";
+
+// Main admin (the platform owner). New farms can be registered only by this
+// account. Created with a temporary password and forced to change it on first
+// login (the shared password is treated as compromised).
+const MAIN_ADMIN_EMAIL = "miguel@admin.com";
 
 // --- Pack base prices (cents) -------------------------------------------------
 const PACK_PRICES = {
@@ -211,10 +232,23 @@ async function main() {
   console.log("Seeding Vedella Local...");
 
   // Clean slate (safe for a dev SQLite DB).
+  await prisma.analyticsEvent.deleteMany();
+  await prisma.channelAttribution.deleteMany();
+  await prisma.interestedContact.deleteMany();
+  await prisma.fulfilmentGroup.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.packItemV2.deleteMany();
+  await prisma.packFarmAcceptance.deleteMany();
+  await prisma.pack.deleteMany();
   await prisma.packItem.deleteMany();
+  await prisma.cycleOfferAvailability.deleteMany();
+  await prisma.cycleFarm.deleteMany();
   await prisma.lot.deleteMany();
+  await prisma.farmCertification.deleteMany();
+  await prisma.farmProfileEdit.deleteMany();
+  await prisma.farmProductOffer.deleteMany();
+  await prisma.productDefinition.deleteMany();
   await prisma.product.deleteMany();
   await prisma.reservationCycle.deleteMany();
   await prisma.translation.deleteMany();
@@ -223,14 +257,32 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.farm.deleteMany();
 
-  // Platform-wide users: one platform_admin (manages the whole marketplace) and
-  // one customer (browses/reserves). A farm_manager per farm is created below.
-  // These seeded identities drive the dev login/role selector in /admin.
+  // Every seeded identity gets the shared TEMPORARY password hash and must
+  // change it on first login (mustChangePassword=true). The hash is salted; the
+  // raw value is never stored or logged.
+  const tempHash = await hashPassword(SEED_TEMP_PASSWORD);
+
+  // The MAIN ADMIN (platform owner). Only this account can register new farms.
+  await prisma.user.create({
+    data: {
+      email: MAIN_ADMIN_EMAIL,
+      name: "Miguel — administració principal",
+      role: "platform_admin",
+      passwordHash: tempHash,
+      mustChangePassword: true,
+    },
+  });
+
+  // Platform-wide demo users: one platform_admin (manages the whole
+  // marketplace) and one customer (browses/reserves). A farm_manager per farm is
+  // created below. These seeded identities let the demo exercise each role.
   await prisma.user.create({
     data: {
       email: "admin@vedellalocal.example",
       name: "Plataforma — administració",
       role: "platform_admin",
+      passwordHash: tempHash,
+      mustChangePassword: true,
     },
   });
   await prisma.user.create({
@@ -238,6 +290,8 @@ async function main() {
       email: "client@vedellalocal.example",
       name: "Client de prova",
       role: "customer",
+      passwordHash: tempHash,
+      mustChangePassword: true,
     },
   });
 
@@ -253,6 +307,8 @@ async function main() {
         email: `manager@${f.slug}.example`,
         name: `${f.name} — gestor`,
         role: "farm_manager",
+        passwordHash: tempHash,
+        mustChangePassword: true,
       },
     });
 
@@ -279,7 +335,11 @@ async function main() {
       data: { farmId: farm.id },
     });
 
-    // Create cuts first (packs reference them via PackItem).
+    // Create cuts first (packs reference them via PackItem). Each farm prices
+    // its own cuts independently: the second farm applies a small per-farm
+    // delta so that, after the M3 backfill, Farm A and Farm B carry DISTINCT
+    // FarmProductOffer prices for the SAME shared ProductDefinition (R-PM3).
+    const farmPriceDelta = fi * 60; // cents; farm 0 = +0, farm 1 = +60
     const cutByKey: Record<string, string> = {};
     for (const c of CUTS) {
       const product = await prisma.product.create({
@@ -288,7 +348,7 @@ async function main() {
           kind: "cut",
           name: c.name,
           description: c.description,
-          basePriceCents: c.priceCents,
+          basePriceCents: c.priceCents + farmPriceDelta,
           weight: c.weight,
           thickness: c.thickness,
           maturation: c.maturation,
@@ -513,7 +573,7 @@ async function main() {
   // One active reservation cycle: 50 places, 13 taken -> 37 free.
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
-  await prisma.reservationCycle.create({
+  const cycle = await prisma.reservationCycle.create({
     data: {
       name: "Cicle novembre 2026",
       zone: "Vallès Oriental",
@@ -524,10 +584,358 @@ async function main() {
       transportNote: "Transport refrigerat (0–4 °C) fins al punt de lliurament.",
       isActive: true,
       isTest: false,
+      internalName: "nov-2026",
+      publicTitle: "Cicle novembre 2026",
+      status: "open",
+      openAt: new Date(now - 5 * day),
+      closeAt: new Date(now + 20 * day),
+      pickupDate: new Date(now + 30 * day),
+      deliveryPriceCents: 600,
     },
   });
 
   console.log("  ✓ Active cycle: Cicle novembre 2026 (37/50 places free).");
+
+  // Two-level product model backfill (migration M2-M4). Runs AFTER the legacy
+  // Product/Lot rows exist so definitions+offers live alongside them (legacy
+  // rows are NOT deleted). The verify step asserts the M3/M4 gates pass.
+  const backfill = await backfillOffers(prisma);
+  const verified = await verifyBackfill(prisma);
+  console.log(
+    `  ✓ Product model backfill: ${backfill.definitionsCreated} definitions, ${backfill.offersCreated} offers, ${backfill.lotsRepointed} lots re-pointed (${backfill.needsReviewOffers} needs-review).`,
+  );
+  console.log(
+    `  ✓ Backfill gates OK: offers (${verified.offers}) == cut products (${verified.cutProducts}); ${verified.repointedLots}/${verified.cutLots} cut-lots carry an offer with matching farmId.`,
+  );
+
+  // --- M6: participating farms + CycleOfferAvailability for the active cycle. --
+  const allFarms = await prisma.farm.findMany();
+  for (const f of allFarms) {
+    await prisma.cycleFarm.create({
+      data: { cycleId: cycle.id, farmId: f.id, allocatedPlaces: 25 },
+    });
+  }
+  const availability = await populateCycleOfferAvailability(prisma, cycle.id);
+  console.log(
+    `  ✓ Cycle availability (M6): ${availability.eligible} offers with an eligible lot, ${availability.ineligible} without.`,
+  );
+
+  // --- Single-farm Pack V2 rows mirroring the A/B/C compositions, built from
+  // each farm's own FarmProductOffers (FEAT-007 / M8). These let the offer-model
+  // public read path render packs with full item-level traceability, while the
+  // legacy Product packs stay untouched for the legacy path. Each pack pins each
+  // item to a usable lot so the public pack spec table + traceability resolve. -
+  for (const f of allFarms) {
+    if (f.isTest) continue;
+    const farmOffers = await prisma.farmProductOffer.findMany({
+      where: { farmId: f.id, isApproved: true, isActive: true, isTest: false },
+    });
+    const offerByName = new Map(farmOffers.map((o) => [o.publicName, o]));
+    for (const p of PACKS) {
+      const items = PACK_ITEMS[p.key]
+        .map((it) => {
+          const cut = CUTS.find((c) => c.key === it.cutKey);
+          const offer = cut ? offerByName.get(cut.name) : undefined;
+          return offer ? { offer, quantity: it.quantity } : null;
+        })
+        .filter((x): x is { offer: (typeof farmOffers)[number]; quantity: number } => !!x);
+      if (items.length !== PACK_ITEMS[p.key].length) continue; // skip incomplete
+      const v2 = await prisma.pack.create({
+        data: {
+          farmId: f.id,
+          isMultiFarm: false,
+          publicName: p.name,
+          description: p.description,
+          priceAmountCents: p.priceCents,
+          lifecycle: "active",
+          isApproved: true,
+          isActive: true,
+        },
+      });
+      for (const it of items) {
+        // Pin a usable lot for the offer so item-level traceability resolves.
+        const lot = await prisma.lot.findFirst({
+          where: {
+            farmProductOfferId: it.offer.id,
+            isWithdrawn: false,
+            isTest: false,
+            units: { gt: 0 },
+          },
+          orderBy: { expiryDate: "asc" },
+        });
+        await prisma.pack.update({
+          where: { id: v2.id },
+          data: {
+            items: {
+              create: {
+                farmProductOfferId: it.offer.id,
+                farmId: f.id,
+                lotId: lot?.id ?? null,
+                quantity: it.quantity,
+              },
+            },
+          },
+        });
+      }
+    }
+  }
+  console.log("  ✓ Single-farm Pack V2 rows seeded for the offer-model read path.");
+
+  // --- A seeded multi-farm pack demonstrating the dual-accept workflow. One
+  // participating farm has accepted, the other has not, so the pack is NOT yet
+  // publishable (the admin review/pack screens show the pending acceptance). ---
+  const entrecotOffers = await prisma.farmProductOffer.findMany({
+    where: { publicName: "Entrecot" },
+    take: 2,
+  });
+  if (entrecotOffers.length === 2) {
+    const mfPack = await prisma.pack.create({
+      data: {
+        isMultiFarm: true,
+        publicName: "Pack dues granges · Tast creuat",
+        description:
+          "Un pack que combina talls de dues granges. Requereix l'acceptació de totes dues granges abans de publicar-se.",
+        priceAmountCents: 8900,
+        lifecycle: "draft",
+        isApproved: false,
+        isActive: false,
+      },
+    });
+    for (const o of entrecotOffers) {
+      await prisma.packItemV2.create({
+        data: {
+          packId: mfPack.id,
+          farmProductOfferId: o.id,
+          farmId: o.farmId,
+          quantity: 1,
+        },
+      });
+    }
+    // Seed acceptance rows: first farm accepted, second pending.
+    await prisma.packFarmAcceptance.create({
+      data: {
+        packId: mfPack.id,
+        farmId: entrecotOffers[0].farmId,
+        accepted: true,
+        acceptedAt: new Date(),
+      },
+    });
+    await prisma.packFarmAcceptance.create({
+      data: { packId: mfPack.id, farmId: entrecotOffers[1].farmId, accepted: false },
+    });
+    console.log(
+      "  ✓ Multi-farm pack seeded (1 farm accepted, 1 pending) to demo dual-accept.",
+    );
+  }
+
+  // --- A seeded approved certification (public) + a pending one (not public). -
+  if (allFarms.length > 0) {
+    await prisma.farmCertification.create({
+      data: {
+        farmId: allFarms[0].id,
+        type: "welfare",
+        title: "Benestar animal certificat",
+        body: "Explotació en extensiu amb pastura pròpia.",
+        evidenceRef: "file://seed/welfare.pdf",
+        status: "approved",
+        approvedAt: new Date(),
+      },
+    });
+    await prisma.farmCertification.create({
+      data: {
+        farmId: allFarms[0].id,
+        type: "organic",
+        title: "Certificació ecològica (pendent)",
+        body: "Sol·licitud en revisió; no s'ha de mostrar públicament.",
+        evidenceRef: "file://seed/organic.pdf",
+        status: "pending_review",
+      },
+    });
+    console.log("  ✓ Certifications seeded (1 approved public, 1 pending not public).");
+  }
+
+  // --- FEAT-005: analytics demo data. Seed anonymous sessions, events, channel
+  // attribution, a handful of confirmed orders (with per-farm FulfilmentGroups
+  // so the two-tier metrics + multi-farm cards have real rows), and a few
+  // notify-me interested contacts. All deterministic; no PII beyond opt-in
+  // emails on InterestedContact and a seeded demo customer. One test session is
+  // flagged isTest to prove exclusion. --------------------------------------
+  const demoCustomer = await prisma.user.findFirst({
+    where: { role: "customer" },
+  });
+  const offersForOrders = await prisma.farmProductOffer.findMany({
+    where: { isApproved: true, isActive: true, isTest: false },
+    include: { farm: true },
+    orderBy: { farmId: "asc" },
+  });
+
+  const CHANNELS_SEED = [
+    "direct",
+    "instagram",
+    "organic_search",
+    "whatsapp",
+    "farm_referral",
+    "email",
+  ];
+  let sessionSeq = 0;
+  function nextSession(isTest = false) {
+    sessionSeq++;
+    return `seed_anon_${isTest ? "test_" : ""}${String(sessionSeq).padStart(4, "0")}`;
+  }
+
+  // 28 anonymous sessions that entered the site and viewed farms; a subset view
+  // items, start a reservation, and complete an order (so conversion/funnel and
+  // repeat-purchase have > 20 qualifying rows where relevant).
+  const sessionCount = 28;
+  let orderSeq = 0;
+  for (let si = 0; si < sessionCount; si++) {
+    const isTestSession = si === 0; // one test session, excluded by default
+    const anon = nextSession(isTestSession);
+    const channel = CHANNELS_SEED[si % CHANNELS_SEED.length];
+    const language = ["ca", "es", "en"][si % 3];
+    const farm = allFarms[si % allFarms.length];
+
+    await prisma.channelAttribution.create({
+      data: {
+        anonSessionId: anon,
+        firstTouchChannel: channel,
+        latestTouchChannel: channel,
+        isTest: isTestSession,
+      },
+    });
+    await prisma.analyticsEvent.createMany({
+      data: [
+        { type: "session_started", anonSessionId: anon, channel, language, isTest: isTestSession },
+        { type: "farm_list_viewed", anonSessionId: anon, language, isTest: isTestSession },
+        { type: "farm_viewed", anonSessionId: anon, farmId: farm.id, language, isTest: isTestSession },
+      ],
+    });
+
+    // ~60% view/select an item (upsell observable via offer_selected).
+    if (si % 5 !== 0) {
+      const offer = offersForOrders.find((o) => o.farmId === farm.id) ?? offersForOrders[0];
+      if (offer) {
+        await prisma.analyticsEvent.createMany({
+          data: [
+            { type: "farm_offer_viewed", anonSessionId: anon, farmId: farm.id, offerId: offer.id, language, isTest: isTestSession },
+            { type: "offer_selected", anonSessionId: anon, farmId: farm.id, offerId: offer.id, language, isTest: isTestSession },
+            { type: "delivery_mode_selected", anonSessionId: anon, deliveryMethod: si % 2 === 0 ? "delivery" : "pickup", language, isTest: isTestSession },
+          ],
+        });
+      }
+    }
+
+    // ~40% start a reservation; most of those complete into an order.
+    if (si % 5 < 2) {
+      await prisma.analyticsEvent.create({
+        data: { type: "reservation_started", anonSessionId: anon, language, isTest: isTestSession },
+      });
+      if (!isTestSession && offersForOrders.length > 0) {
+        orderSeq++;
+        const offer = offersForOrders.find((o) => o.farmId === farm.id) ?? offersForOrders[0];
+        const qty = 1 + (orderSeq % 3);
+        const subtotal = offer.priceAmountCents * qty;
+        const total = subtotal + 600;
+        // A couple of customers order twice (repeat purchase).
+        const customerId = demoCustomer && orderSeq % 4 === 0 ? demoCustomer.id : null;
+        const order = await prisma.order.create({
+          data: {
+            cycleId: cycle.id,
+            customerId,
+            status: "confirmed",
+            lotReferenceSnapshot: "",
+            subtotalCents: subtotal,
+            discountCents: 0,
+            deliveryFeeCents: 600,
+            totalCents: total,
+            isTest: false,
+            attributionChannel: channel,
+            deliveryMethod: si % 2 === 0 ? "delivery" : "pickup",
+            items: {
+              create: [
+                {
+                  farmProductOfferId: offer.id,
+                  farmId: offer.farmId,
+                  nameSnapshot: offer.publicName,
+                  priceCentsSnapshot: offer.priceAmountCents,
+                  quantity: qty,
+                },
+              ],
+            },
+            fulfilmentGroups: {
+              create: [
+                { farmId: offer.farmId, status: "preparing", subtotalCents: subtotal },
+              ],
+            },
+          },
+        });
+        await prisma.analyticsEvent.create({
+          data: {
+            type: "reservation_completed",
+            anonSessionId: anon,
+            farmId: offer.farmId,
+            offerId: offer.id,
+            language,
+            isTest: false,
+          },
+        });
+        await prisma.channelAttribution.update({
+          where: { anonSessionId: anon },
+          data: { orderId: order.id },
+        });
+      } else if (isTestSession) {
+        await prisma.analyticsEvent.create({
+          data: { type: "reservation_completed", anonSessionId: anon, language, isTest: true },
+        });
+      }
+    }
+
+    // A handful leave a notify-me email (decision 5), some farm-attributed.
+    if (si % 6 === 0) {
+      await prisma.analyticsEvent.create({
+        data: {
+          type: "next_cycle_interest_submitted",
+          anonSessionId: anon,
+          farmId: si % 12 === 0 ? farm.id : null,
+          language,
+          isTest: isTestSession,
+        },
+      });
+      await prisma.interestedContact.create({
+        data: {
+          email: `interessat${si}@exemple.cat`,
+          locale: language,
+          anonSessionId: anon,
+          farmId: si % 12 === 0 ? farm.id : null,
+          isTest: isTestSession,
+        },
+      });
+    }
+  }
+  console.log(
+    `  ✓ Analytics demo: ${sessionCount} sessions, ${orderSeq} confirmed orders, events + attribution + interested contacts seeded.`,
+  );
+
+  // --- M5: order enrichment backfill (now with seeded orders). ----------------
+  const totalsBefore = new Map(
+    (await prisma.order.findMany({ select: { id: true, totalCents: true } })).map(
+      (o) => [o.id, o.totalCents],
+    ),
+  );
+  const orderBackfill = await backfillOrders(prisma);
+  await verifyOrderTotalsUnchanged(prisma, totalsBefore);
+  console.log(
+    `  ✓ Order backfill (M5): ${orderBackfill.openOrders} open backfilled, ${orderBackfill.historicalUntouched} historical untouched, totals unchanged.`,
+  );
+
+  console.log(
+    `  ✓ Main admin ${MAIN_ADMIN_EMAIL} created with a TEMPORARY password (must change on first login).`,
+  );
+
+  // --- FEAT-006: default marketplace settings (no secrets). -------------------
+  await ensureDefaultSettings(prisma);
+  console.log("  ✓ Default settings seeded (no secret values).");
+
   console.log("Seed complete.");
 }
 

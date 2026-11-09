@@ -7,6 +7,25 @@
     "basket": "Cistella",
     "search": "Cerca"
   },
+  "admin": {
+    "title": "Administració",
+    "nav": {
+      "overview": "Resum",
+      "metrics": "Mètriques",
+      "farms": "Granges",
+      "products": "Productes i packs",
+      "lots": "Lots",
+      "cycles": "Cicles",
+      "orders": "Comandes",
+      "incidents": "Incidències",
+      "websiteText": "Textos web",
+      "users": "Usuaris i permisos",
+      "review": "Revisió",
+      "audit": "Registre d'activitat",
+      "settings": "Ajustos",
+      "logout": "Tanca la sessió"
+    }
+  },
   "hero": {
     "eyebrow": "Mercat de proximitat",
     "title": "Vedella local i traçable de Catalunya",
@@ -41,6 +60,33 @@
       "fairDesc": "Sense intermediaris. Descomptes per volum i lliurament refrigerat."
     }
   },
+  "notify": {
+    "title": "Vols que t'avisem del pròxim cicle?",
+    "subtitle": "Deixa'ns el teu correu i t'escriurem quan s'obri una nova reserva. Sense màrqueting, només l'avís.",
+    "placeholder": "El teu correu electrònic",
+    "button": "Avisa'm",
+    "success": "Perfecte! T'avisarem quan s'obri el pròxim cicle.",
+    "error": "No hem pogut desar el teu correu. Torna-ho a provar."
+  },
+  "cycle": {
+    "title": "Cicle de reserva actiu",
+    "zone": "Zona",
+    "method": "Mètode",
+    "methodDelivery": "Lliurament refrigerat",
+    "methodDeliveryOrPickup": "Lliurament o recollida",
+    "close": "Tancament de reserves",
+    "delivery": "Lliurament previst",
+    "pickup": "Recollida",
+    "deliveryPrice": "Cost de lliurament",
+    "places": "Places lliures",
+    "closesIn": "Tanca en",
+    "closed": "Reserves tancades",
+    "days": "d",
+    "hours": "h",
+    "minutes": "m",
+    "seconds": "s",
+    "none": "Ara mateix no hi ha cap cicle de reserva obert."
+  },
   "farm": {
     "backToMarket": "Torna al mercat",
     "foundedIn": "Des de",
@@ -52,6 +98,8 @@
     "units": "u.",
     "traceability": "Traçabilitat",
     "lot": "Lot",
+    "farmLabel": "Granja",
+    "multiFarm": "Pack multi-granja",
     "noProducts": "Aquesta granja encara no té productes publicats."
   },
   "product": {

@@ -9,6 +9,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { reserve } from "@/lib/reserve";
 import { reserveRateLimiter, clientKeyFromRequest } from "@/lib/rateLimit";
+import { getOrCreateAnonSession } from "@/lib/analytics-session";
+import { recordEvent } from "@/lib/analytics";
 
 const BodySchema = z.object({
   items: z
@@ -57,18 +59,41 @@ export async function POST(request: Request) {
   }
 
   const parsed = BodySchema.safeParse(json);
+  // Anonymous session for visitor tracking (decision 4). No PII is stored on
+  // the event; the email (if any) lives only on the order, not the event.
+  const session = getOrCreateAnonSession();
   if (!parsed.success) {
+    await recordEvent(prisma, {
+      type: "reservation_validation_failed",
+      anonSessionId: session.id,
+    });
     return NextResponse.json(
       { ok: false, code: "INVALID_BODY", issues: parsed.error.flatten() },
       { status: 400 },
     );
   }
 
+  // Reservation flow begun.
+  await recordEvent(prisma, {
+    type: "reservation_started",
+    anonSessionId: session.id,
+  });
+
   const outcome = await reserve(prisma, parsed.data);
   if (!outcome.ok) {
+    await recordEvent(prisma, {
+      type: "reservation_validation_failed",
+      anonSessionId: session.id,
+    });
     return NextResponse.json(outcome, {
       status: ERROR_STATUS[outcome.code] ?? 400,
     });
   }
+
+  // Order created: reservation completed.
+  await recordEvent(prisma, {
+    type: "reservation_completed",
+    anonSessionId: session.id,
+  });
   return NextResponse.json(outcome, { status: 201 });
 }

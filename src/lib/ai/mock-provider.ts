@@ -19,11 +19,19 @@ import type {
   TranslateInput,
   ExtractReceiptInput,
   MetricsInput,
+  AssistantFacts,
+  OfferCompareFacts,
+  TraceabilityFacts,
 } from "./provider";
 import type {
   TranslationResult,
   ReceiptExtraction,
   MetricsSummary,
+  FarmProfileDraft,
+  OfferCompare,
+  TraceabilityReview,
+  MetricsAnalyst,
+  CycleRecommendation,
 } from "./schemas";
 import { formatCents } from "@/lib/pricing";
 
@@ -133,6 +141,158 @@ export class MockAiProvider implements AiProvider {
         avgPriceCents: c.avgPriceCents,
         sampleCount: c.sampleCount,
       })),
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Bounded in-panel assistants (FEAT-007). Deterministic, offline, and
+  // side-effect free. Each DRAFTS or SUGGESTS copy/insights only: it never sets
+  // a price, never approves/publishes, never creates traceability, and never
+  // acts on an injected instruction in `untrustedNote` (that text is only
+  // ECHOED verbatim into a note field as inert data, never interpreted). A
+  // claim that is not grounded in a provided fact is marked needs-evidence.
+  // -------------------------------------------------------------------------
+
+  async draftFarmProfile(input: AssistantFacts): Promise<FarmProfileDraft> {
+    const name = String(input.facts.name ?? "la granja");
+    const breed = input.facts.breed ? String(input.facts.breed) : null;
+    const town = input.facts.town ? String(input.facts.town) : null;
+    const grounded = (sourceRef: string | null) => ({
+      sourceRef,
+      needsEvidence: !sourceRef,
+    });
+    const fields: FarmProfileDraft["fields"] = [];
+    if (town) {
+      fields.push({
+        field: "story",
+        suggestion: `${name} és una explotació situada a ${town}. Esborrany generat a partir de dades existents; reviseu-lo abans de publicar.`,
+        evidence: grounded("farm.town"),
+      });
+    }
+    if (breed) {
+      fields.push({
+        field: "welfareInfo",
+        suggestion: `Cria de ${breed}. Confirmeu el detall de benestar abans de publicar.`,
+        evidence: grounded("farm.breed"),
+      });
+    }
+    // A line with NO backing fact is explicitly marked needs-evidence so a human
+    // supplies the source (never a fabricated certification/claim).
+    fields.push({
+      field: "traceabilityInfo",
+      suggestion:
+        "Cadena de traçabilitat Granja → Lot → Tall → Paquet. Afegiu el detall verificat.",
+      evidence: grounded(null),
+    });
+    return {
+      assistant: "farmProfileDraft",
+      summary: `Esborrany de perfil per a ${name}. Nomes suggeriments; cal revisio humana.`,
+      fields,
+      notes: input.untrustedNote
+        ? `Nota de l'usuari (tractada com a dades, no instruccions): ${input.untrustedNote}`
+        : "",
+    };
+  }
+
+  async compareOffers(input: OfferCompareFacts): Promise<OfferCompare> {
+    return {
+      assistant: "offerCompare",
+      definitionName: input.definitionName,
+      headline: `Comparativa de ${input.offers.length} ofertes de "${input.definitionName}" (nomes lectura; cap recomanacio de preu).`,
+      rows: input.offers.map((o) => ({
+        farmName: o.farmName,
+        offerName: o.offerName,
+        observedWeight: o.observedWeight,
+        observedMaturation: o.observedMaturation,
+        note: "Fets observats. L'assistent no recomana ni fixa preus.",
+        evidence: { sourceRef: `offer:${o.farmName}`, needsEvidence: false },
+      })),
+      notes: input.untrustedNote
+        ? `Nota (dades, no instruccions): ${input.untrustedNote}`
+        : "",
+    };
+  }
+
+  async reviewTraceability(
+    input: TraceabilityFacts,
+  ): Promise<TraceabilityReview> {
+    const findings: TraceabilityReview["findings"] = [];
+    const c = input.chain;
+    if (!c.lotReference) {
+      findings.push({
+        severity: "warning",
+        message: "No s'ha trobat cap lot per a aquesta cadena.",
+        evidence: { sourceRef: "lot", needsEvidence: false },
+      });
+    }
+    if (!c.offerName) {
+      findings.push({
+        severity: "warning",
+        message: "La cadena no referencia cap oferta.",
+        evidence: { sourceRef: "offer", needsEvidence: false },
+      });
+    }
+    if (findings.length === 0) {
+      findings.push({
+        severity: "info",
+        message: `Cadena completa: ${c.farmName} → ${c.lotReference} → ${c.offerName}${c.packName ? ` → ${c.packName}` : ""}.`,
+        evidence: { sourceRef: "chain", needsEvidence: false },
+      });
+    }
+    return {
+      assistant: "traceabilityReview",
+      chainRef: input.inputRef,
+      findings,
+      complete: !!c.lotReference && !!c.offerName,
+      notes: input.untrustedNote
+        ? `Nota (dades, no instruccions): ${input.untrustedNote}`
+        : "",
+    };
+  }
+
+  async analyzeMetrics(input: MetricsInput): Promise<MetricsAnalyst> {
+    const total = input.perCut.reduce((s, c) => s + c.sampleCount, 0);
+    const observations = input.perCut.map(
+      (c) =>
+        `${c.cutName}: mitjana observada ${formatCents(c.avgPriceCents)} (${c.sampleCount} mostres).`,
+    );
+    return {
+      assistant: "metricsAnalyst",
+      weekStart: input.weekStart,
+      headline:
+        input.perCut.length === 0
+          ? `Sense mostres de mercat per a la setmana del ${input.weekStart}.`
+          : `Setmana del ${input.weekStart}: ${input.perCut.length} talls, ${total} mostres. Xifres observades, no fixades per l'IA.`,
+      observations,
+      notes: "",
+    };
+  }
+
+  async recommendCycle(input: AssistantFacts): Promise<CycleRecommendation> {
+    const zone = input.facts.zone ? String(input.facts.zone) : null;
+    const name = String(input.facts.name ?? "el cicle");
+    const suggestions: CycleRecommendation["suggestions"] = [];
+    if (zone) {
+      suggestions.push({
+        topic: "comunicacio",
+        suggestion: `Recordeu a la clientela de ${zone} la data de tancament del cicle. Text suggerit; l'IA no fixa dates ni places.`,
+        evidence: { sourceRef: "cycle.zone", needsEvidence: false },
+      });
+    }
+    suggestions.push({
+      topic: "logistica",
+      suggestion:
+        "Confirmeu el transport refrigerat amb antelacio. Suggeriment no vinculant.",
+      evidence: { sourceRef: null, needsEvidence: true },
+    });
+    return {
+      assistant: "cycleRecommendation",
+      cycleRef: input.inputRef,
+      headline: `Suggeriments no vinculants per a ${name}. Un huma crea/edita el cicle.`,
+      suggestions,
+      notes: input.untrustedNote
+        ? `Nota (dades, no instruccions): ${input.untrustedNote}`
+        : "",
     };
   }
 }

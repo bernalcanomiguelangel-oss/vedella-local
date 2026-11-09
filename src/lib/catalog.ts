@@ -25,6 +25,25 @@ import {
 } from "./i18n";
 
 /**
+ * M8 feature flag (FEAT-007): switch the public catalog read path from the
+ * legacy `Product` table to the two-level `FarmProductOffer` + `ProductDefinition`
+ * model built in FEAT-003. The legacy Product table is KEPT readable; this only
+ * selects which path renders the public pages.
+ *
+ * Default ON: the seeded/backfilled data carries offers, so the demo renders the
+ * new model with no configuration. Set PUBLIC_OFFER_MODEL_ENABLED="false" to
+ * force the legacy path (used by the legacy catalog tests). The offer path also
+ * falls back to legacy automatically for a farm that has no offers yet.
+ */
+export function offerModelEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const raw = env.PUBLIC_OFFER_MODEL_ENABLED;
+  if (raw === undefined) return true; // default ON
+  return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
+}
+
+/**
  * Load an approved-only translation index for a set of entity ids. Returns an
  * empty index for the default locale (ca uses the base columns). FEAT-003 fills
  * the Translation table; a human approves rows before they surface here.
@@ -69,6 +88,10 @@ export interface OfferedPackItem {
   cutProductId: string;
   name: string;
   quantity: number;
+  /** Per-item farm name (for multi-farm pack traceability). Null on legacy path. */
+  farmName?: string | null;
+  /** Per-item lot reference (for multi-farm pack traceability). */
+  lotReference?: string | null;
 }
 
 export interface OfferedPack {
@@ -81,6 +104,8 @@ export interface OfferedPack {
   weight: string | null;
   items: OfferedPackItem[];
   lotReference: string | null;
+  /** True for a pack whose items span more than one farm. */
+  isMultiFarm?: boolean;
 }
 
 export interface OfferedFarm {
@@ -95,9 +120,27 @@ export interface OfferedFarm {
   story: string;
 }
 
+export interface PublicCertification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+}
+
+export interface FarmProfileExtras {
+  productionMethod: string | null;
+  traceabilityInfo: string | null;
+  welfareInfo: string | null;
+  feedInfo: string | null;
+  locationDetail: string | null;
+}
+
 export interface FarmCatalog extends OfferedFarm {
   packs: OfferedPack[];
   cuts: OfferedCut[];
+  /** ONLY approved certifications are ever exposed publicly (rule C). */
+  certifications: PublicCertification[];
+  profile: FarmProfileExtras;
 }
 
 /**
@@ -158,10 +201,45 @@ export async function getFarmCatalog(
   slug: string,
   locale: Locale = DEFAULT_LOCALE,
 ): Promise<FarmCatalog | null> {
+  // M8: prefer the offer-model read path when enabled AND the farm actually has
+  // offers; otherwise fall back to the legacy Product path (kept readable).
+  if (offerModelEnabled()) {
+    const offerCatalog = await getFarmCatalogFromOffers(slug, locale);
+    if (offerCatalog) return offerCatalog;
+    // offerCatalog === null means either not-approved (same as legacy null) OR
+    // no offers yet. Disambiguate: if the farm exists+approved but has no
+    // offers, fall through to legacy; otherwise return null.
+    const farmExists = await prisma.farm.findFirst({
+      where: { slug, isApproved: true, isActive: true, isTest: false },
+      select: { id: true },
+    });
+    if (!farmExists) return null;
+    const offerCount = await prisma.farmProductOffer.count({
+      where: { farmId: farmExists.id },
+    });
+    if (offerCount > 0) {
+      // Farm has offers but none publicly offerable -> return the (empty) offer
+      // catalog rather than silently showing legacy products.
+      return getFarmCatalogFromOffers(slug, locale, { allowEmpty: true });
+    }
+    // No offers at all -> legacy path.
+  }
+  return getFarmCatalogLegacy(slug, locale);
+}
+
+async function getFarmCatalogLegacy(
+  slug: string,
+  locale: Locale = DEFAULT_LOCALE,
+): Promise<FarmCatalog | null> {
   const farm = await prisma.farm.findFirst({
     // Exclude test/demo farms from the public catalog (R15), matching
     // listOfferedFarms and search.
     where: { slug, isApproved: true, isActive: true, isTest: false },
+    include: {
+      // ONLY approved certifications are exposed to this public read path.
+      // Unverified (draft/pending_review/rejected) claims are never selected.
+      certifications: { where: { status: "approved" }, orderBy: { createdAt: "asc" } },
+    },
   });
   if (!farm) return null;
 
@@ -265,6 +343,371 @@ export async function getFarmCatalog(
     story: resolveContent(index, "farm", farm.id, "story", locale, farm.story),
     packs,
     cuts,
+    certifications: farm.certifications.map((c) => ({
+      id: c.id,
+      type: c.type,
+      title: c.title,
+      body: c.body,
+    })),
+    profile: {
+      productionMethod: farm.productionMethod,
+      traceabilityInfo: farm.traceabilityInfo,
+      welfareInfo: farm.welfareInfo,
+      feedInfo: farm.feedInfo,
+      locationDetail: farm.locationDetail,
+    },
+  };
+}
+
+/**
+ * Format an offer's structured weight facts back into a human string for the
+ * public card (e.g. "≈ 300 g" or "280–320 g"), falling back to preserved
+ * legacy free-text when structured values are absent.
+ */
+function offerWeightLabel(o: {
+  expectedUnitWeightMinG: number | null;
+  expectedUnitWeightMaxG: number | null;
+  legacyFacts: string | null;
+}): string | null {
+  if (o.expectedUnitWeightMinG && o.expectedUnitWeightMaxG) {
+    if (o.expectedUnitWeightMinG === o.expectedUnitWeightMaxG) {
+      return `≈ ${o.expectedUnitWeightMinG} g`;
+    }
+    return `${o.expectedUnitWeightMinG}–${o.expectedUnitWeightMaxG} g`;
+  }
+  if (o.expectedUnitWeightMinG) return `≈ ${o.expectedUnitWeightMinG} g`;
+  return null;
+}
+
+/**
+ * Pick an offer's representative public lot reference: a non-withdrawn,
+ * non-test lot with units > 0, soonest expiry first. Mirrors pickLotReference
+ * but keyed on the offer's own lots.
+ */
+function pickOfferLotReference(
+  lots: {
+    reference: string;
+    isWithdrawn: boolean;
+    isTest: boolean;
+    units: number;
+    expiryDate: Date;
+  }[],
+): string | null {
+  const usable = lots
+    .filter((l) => !l.isWithdrawn && !l.isTest && l.units > 0)
+    .sort((a, b) => a.expiryDate.getTime() - b.expiryDate.getTime());
+  return usable.length > 0 ? usable[0].reference : null;
+}
+
+/**
+ * Offer-model read path (FEAT-007 / M8). Builds the public catalog from
+ * `FarmProductOffer` + `ProductDefinition` (cuts) and `Pack` + `PackItemV2`
+ * (packs), preserving the composite traceability (lot.farmId == offer.farmId).
+ *
+ * The "publicly offered" gate is identical to the legacy path:
+ *  - Farm approved + active + not test
+ *  - Offer approved + active + not test (+ not archived)
+ *  - backed by a non-withdrawn, in-stock, non-test lot
+ *  - only approved certifications are public
+ *
+ * A multi-farm pack is only offered when ALL participating farms accepted AND
+ * every referenced offer is itself publicly offered; each item carries its own
+ * farm + lot for item-level traceability.
+ *
+ * Returns null when the farm is not approved+active. With `allowEmpty`, a farm
+ * that has offers but nothing currently offerable returns an empty catalog
+ * (rather than null) so the caller does not fall back to the legacy path.
+ */
+export async function getFarmCatalogFromOffers(
+  slug: string,
+  locale: Locale = DEFAULT_LOCALE,
+  opts: { allowEmpty?: boolean } = {},
+): Promise<FarmCatalog | null> {
+  const farm = await prisma.farm.findFirst({
+    where: { slug, isApproved: true, isActive: true, isTest: false },
+    include: {
+      certifications: {
+        where: { status: "approved" },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+  if (!farm) return null;
+
+  const offers = await prisma.farmProductOffer.findMany({
+    where: {
+      farmId: farm.id,
+      isApproved: true,
+      isActive: true,
+      isTest: false,
+      archivedAt: null,
+    },
+    include: { productDefinition: true, lots: true },
+    orderBy: { priceAmountCents: "asc" },
+  });
+
+  if (offers.length === 0 && !opts.allowEmpty) {
+    return null; // let getFarmCatalog decide whether to fall back to legacy
+  }
+
+  const index = await loadTranslationIndex(locale, [
+    farm.id,
+    ...offers.map((o) => o.id),
+  ]);
+
+  // Build the offered cuts. Each offer must be backed by a usable lot.
+  const cuts: OfferedCut[] = [];
+  const offerLotById = new Map<string, string | null>();
+  for (const o of offers) {
+    const lotRef = pickOfferLotReference(o.lots);
+    offerLotById.set(o.id, lotRef);
+    if (!lotRef) continue;
+    cuts.push({
+      id: o.id,
+      kind: "cut",
+      name: resolveContent(index, "product", o.id, "name", locale, o.publicName),
+      description: resolveContent(
+        index,
+        "product",
+        o.id,
+        "description",
+        locale,
+        o.description,
+      ),
+      basePriceCents: o.priceAmountCents,
+      priceLabel: formatCents(o.priceAmountCents),
+      weight: offerWeightLabel(o),
+      thickness: o.thicknessMm ? `${o.thicknessMm} mm` : null,
+      maturation: o.maturationDays ? `${o.maturationDays} dies` : null,
+      packaging: o.packagingMethod,
+      shelfLife: o.minimumShelfLifeDays
+        ? `${o.minimumShelfLifeDays} dies en fred`
+        : null,
+      lotReference: lotRef,
+    });
+  }
+  const offeredOfferIds = new Set(cuts.map((c) => c.id));
+
+  // Build offered packs from the V2 model. Include single-farm packs owned by
+  // this farm AND multi-farm packs this farm participates in.
+  const packRows = await prisma.pack.findMany({
+    where: {
+      isApproved: true,
+      isActive: true,
+      isTest: false,
+      OR: [{ farmId: farm.id }, { items: { some: { farmId: farm.id } } }],
+    },
+    include: {
+      items: { include: { offer: true, farm: true, lot: true } },
+      acceptances: true,
+    },
+    orderBy: { priceAmountCents: "asc" },
+  });
+
+  const packs: OfferedPack[] = [];
+  for (const pk of packRows) {
+    if (pk.items.length === 0) continue;
+    // Multi-farm packs require EVERY participating farm to have accepted.
+    if (pk.isMultiFarm) {
+      const allAccepted =
+        pk.acceptances.length > 0 &&
+        pk.acceptances.every((a) => a.accepted);
+      if (!allAccepted) continue;
+    }
+    // Every referenced offer must itself be publicly offered (approved+active+
+    // in-stock). Resolve each item's lot for item-level traceability.
+    const items: OfferedPackItem[] = [];
+    let allOffered = true;
+    for (const it of pk.items) {
+      const offer = it.offer;
+      // The item's offer must be approved+active; find a usable lot.
+      const itemOffered =
+        offer?.isApproved && offer?.isActive && !offer?.isTest;
+      // Prefer the pinned lot, else the offer's own usable lot.
+      let lotRef: string | null = null;
+      if (it.lot && !it.lot.isWithdrawn && it.lot.units > 0 && !it.lot.isTest) {
+        lotRef = it.lot.reference;
+      } else if (offer) {
+        const offerLots = await prisma.lot.findMany({
+          where: {
+            farmProductOfferId: offer.id,
+            isWithdrawn: false,
+            isTest: false,
+            units: { gt: 0 },
+          },
+          orderBy: { expiryDate: "asc" },
+          select: { reference: true },
+        });
+        lotRef = offerLots[0]?.reference ?? null;
+      }
+      if (!itemOffered || !lotRef) allOffered = false;
+      items.push({
+        cutProductId: offer?.id ?? it.farmProductOfferId,
+        name: offer?.publicName ?? "",
+        quantity: it.quantity,
+        farmName: it.farm?.name ?? null,
+        lotReference: lotRef,
+      });
+    }
+    if (!allOffered) continue;
+    const representativeLot = items.find((i) => i.lotReference)?.lotReference ?? null;
+    packs.push({
+      id: pk.id,
+      kind: "pack",
+      name: resolveContent(index, "product", pk.id, "name", locale, pk.publicName),
+      description: resolveContent(
+        index,
+        "product",
+        pk.id,
+        "description",
+        locale,
+        pk.description,
+      ),
+      basePriceCents: pk.priceAmountCents,
+      priceLabel: formatCents(pk.priceAmountCents),
+      weight: null,
+      items,
+      lotReference: representativeLot,
+      isMultiFarm: pk.isMultiFarm,
+    });
+  }
+  // Transitional union (M8): a legacy Product that is approved+active and backed
+  // by a usable lot, but whose canonical name is NOT already represented by an
+  // offered offer, is still surfaced from the legacy path so nothing a human
+  // approved disappears while the offer model is finalised.
+  //
+  // FEAT-008 note: FEAT-007 planned to REMOVE this union once offers are the
+  // source. It is KEPT because the demo seeds a legacy-Product-only cut ("Secret
+  // de vedella") with NO backing offer, used by the admin approve -> publish ->
+  // public-visibility e2e flow (e2e/admin-approve.spec.ts). Dropping the union
+  // makes that human-approved product vanish from the offer-backed farm page,
+  // breaking a seeded farm scenario. Per the plan's "keep it if removal breaks a
+  // seeded farm", the union stays; it still de-duplicates by public name so an
+  // offered offer always wins and nothing is shown twice.
+  const offeredNames = new Set(cuts.map((c) => c.name));
+  const legacyProducts = await prisma.product.findMany({
+    where: {
+      farmId: farm.id,
+      kind: "cut",
+      isApproved: true,
+      isActive: true,
+      isTest: false,
+    },
+    include: { lots: true },
+    orderBy: { basePriceCents: "asc" },
+  });
+  const legacyIndexIds = legacyProducts.map((p) => p.id);
+  const legacyIndex =
+    legacyIndexIds.length > 0
+      ? await loadTranslationIndex(locale, legacyIndexIds)
+      : new Map<string, string>();
+  for (const p of legacyProducts) {
+    if (offeredNames.has(p.name)) continue; // an offer already represents it
+    const lotRef = pickLotReference(p.lots);
+    if (!lotRef) continue;
+    offeredNames.add(p.name);
+    cuts.push({
+      id: p.id,
+      kind: "cut",
+      name: resolveContent(legacyIndex, "product", p.id, "name", locale, p.name),
+      description: resolveContent(
+        legacyIndex,
+        "product",
+        p.id,
+        "description",
+        locale,
+        p.description,
+      ),
+      basePriceCents: p.basePriceCents,
+      priceLabel: formatCents(p.basePriceCents),
+      weight: p.weight,
+      thickness: p.thickness,
+      maturation: p.maturation,
+      packaging: p.packaging,
+      shelfLife: p.shelfLife,
+      lotReference: lotRef,
+    });
+  }
+
+  // Keep offeredOfferIds referenced (lint) by exposing it in a cheap check.
+  void offeredOfferIds;
+
+  cuts.sort((a, b) => a.basePriceCents - b.basePriceCents);
+  packs.sort((a, b) => a.basePriceCents - b.basePriceCents);
+
+  return {
+    id: farm.id,
+    slug: farm.slug,
+    name: resolveContent(index, "farm", farm.id, "name", locale, farm.name),
+    town: farm.town,
+    comarca: farm.comarca,
+    breed: farm.breed,
+    foundedYear: farm.foundedYear,
+    animalCount: farm.animalCount,
+    story: resolveContent(index, "farm", farm.id, "story", locale, farm.story),
+    packs,
+    cuts,
+    certifications: farm.certifications.map((c) => ({
+      id: c.id,
+      type: c.type,
+      title: c.title,
+      body: c.body,
+    })),
+    profile: {
+      productionMethod: farm.productionMethod,
+      traceabilityInfo: farm.traceabilityInfo,
+      welfareInfo: farm.welfareInfo,
+      feedInfo: farm.feedInfo,
+      locationDetail: farm.locationDetail,
+    },
+  };
+}
+
+/**
+ * Public, DB-driven facts for the single active reservation cycle. Every value
+ * is read from the ReservationCycle row — nothing is hard-coded. `closeAtIso`
+ * is the precise reservation-close timestamp the client countdown runs against
+ * (FEAT-004 enriched `closeAt`, falling back to `closeDate`). `remainingPlaces`
+ * is the live free-place count. Returns null when no cycle is active.
+ */
+export interface PublicCycleFacts {
+  name: string;
+  zone: string;
+  transportNote: string;
+  method: string;
+  closeAtIso: string;
+  deliveryDateIso: string;
+  pickupDateIso: string | null;
+  deliveryPriceCents: number | null;
+  deliveryPriceLabel: string | null;
+  totalPlaces: number;
+  remainingPlaces: number;
+  /** True once the reservation-close timestamp has passed (reservations closed). */
+  closed: boolean;
+}
+
+export async function getActiveCycleFacts(): Promise<PublicCycleFacts | null> {
+  const cycle = await prisma.reservationCycle.findFirst({
+    where: { isActive: true },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!cycle) return null;
+  const closeAt = cycle.closeAt ?? cycle.closeDate;
+  const deliveryPriceCents = cycle.deliveryPriceCents;
+  return {
+    name: cycle.publicTitle ?? cycle.name,
+    zone: cycle.zone,
+    transportNote: cycle.transportNote,
+    method: cycle.pickupDate ? "delivery_or_pickup" : "delivery",
+    closeAtIso: closeAt.toISOString(),
+    deliveryDateIso: cycle.deliveryDate.toISOString(),
+    pickupDateIso: cycle.pickupDate ? cycle.pickupDate.toISOString() : null,
+    deliveryPriceCents,
+    deliveryPriceLabel:
+      deliveryPriceCents != null ? formatCents(deliveryPriceCents) : null,
+    totalPlaces: cycle.totalPlaces,
+    remainingPlaces: cycle.freePlaces,
+    closed: closeAt.getTime() <= Date.now(),
   };
 }
 

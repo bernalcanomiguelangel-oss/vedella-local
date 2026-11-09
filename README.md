@@ -31,8 +31,12 @@ npm install
 # 2. Configure environment (defaults run fully offline with the mock AI provider)
 cp .env.example .env
 
-# 3. Create the SQLite database and generate the Prisma client
-npx prisma db push
+# 3. Create the SQLite database from the committed migrations and generate the client
+#    (migrations under prisma/migrations/ are the source of truth; dev.db is
+#    git-ignored and rebuilt from them).
+npx prisma migrate deploy        # apply migrations to an existing/empty DB
+#   — or, to rebuild a dev DB from scratch:
+#   npx prisma migrate reset --force --skip-seed
 
 # 4. Seed two fantasy farms, packs, cuts, lots, and one active reservation cycle
 npm run seed
@@ -43,6 +47,74 @@ npm run dev
 
 The app runs end-to-end with **no API key**. A real AI provider is only used when
 `AI_API_KEY` is set *and* the relevant feature flag is enabled.
+
+> **Migrations are authoritative.** Schema changes ship as committed SQL under
+> `prisma/migrations/` (applied with `migrate deploy` / `migrate reset`), not
+> `prisma db push`. The migration set follows a safe additive plan
+> (`docs/migration-plan.md`, phases M1–M8): add nullable columns/new tables →
+> backfill → verify → add indexes/constraints (**M7**) → add the guarded
+> non-null/backing invariants and switch the public read path to the offer model
+> (**M8**). The legacy `Product` table and `Lot.productId` are kept **readable**;
+> destructive cleanup is deferred.
+
+### Where a real AI provider key goes
+
+Paste a real key **only** into the git-ignored `.env` as `AI_API_KEY`, set
+`AI_PROVIDER` to the real provider name, and turn on the specific feature flag(s)
+you want (see the table below). The admin **Settings** page and each in-panel
+assistant show this as a **presence-only** indicator (`hasApiKey=true/false` and
+the env-var name `AI_API_KEY`) — the key value is never read into the browser,
+logged, or stored in the database. With `AI_API_KEY` empty, everything falls back
+to the deterministic **MockAiProvider** so the demo runs fully offline with zero
+configuration.
+
+## Authentication & passwords
+
+Admin access uses real **email + password** login. Passwords are stored only as
+salted hashes and are never logged or returned.
+
+- **Hashing library: [`bcryptjs`](https://www.npmjs.com/package/bcryptjs).** It is
+  a pure-JavaScript bcrypt implementation, so it installs from npm with **no
+  native build step** and works offline. This matters because the project must
+  build and test without a guaranteed native-compile toolchain or external
+  network access; native bindings such as `bcrypt`/`argon2` were avoided for that
+  reason. Hashing lives in `src/lib/password.ts` (`hashPassword`,
+  `verifyPassword`, `validatePasswordPolicy`).
+- **Main admin.** The seed creates `miguel@admin.com` as a `platform_admin` with a
+  **temporary** password and `mustChangePassword=true`, so the account is forced
+  through the change-password flow before any admin page is reachable. The
+  temporary value is read from `SEED_ADMIN_TEMP_PASSWORD` (see `.env.example`),
+  falling back to a documented **non-secret** development default. No real
+  password is ever hardcoded or logged.
+- **Forced change on first login.** Every seeded identity starts with
+  `mustChangePassword=true`; `requireAdmin` redirects such a user to
+  `/admin/change-password` until they set their own password.
+- **New users default to `customer`** and are never auto-promoted; only a
+  `platform_admin` can create users or assign the `platform_admin` role
+  (`src/lib/admin/users-actions.ts`), and every such action is written to the
+  `AdminAudit` log.
+
+## Analytics & charts
+
+Anonymous visitor tracking (no unnecessary PII) feeds the admin **Metrics**
+dashboard. An opaque, cookie-based session id (`vl_anon`, no identifying
+free-text) keys every `AnalyticsEvent`; a `customerId` is attached only when an
+opt-in/signed-in customer is present. `ChannelAttribution` captures first- and
+latest-touch channel (closed set — `unknown` is stored, never guessed), UTM
+params and an optional farm referral code. A notify-me form captures opt-in
+emails into `InterestedContact` (no marketing automation).
+
+Metrics are **two-tier**: a `farm_manager` sees only their own farm's numbers;
+a `platform_admin` sees platform-wide aggregates and can drill into any single
+farm. There are **no margin/cost cards anywhere** (cost is internal). Test
+records are excluded by default; any metric on fewer than 20 qualifying rows is
+flagged "sample too small". Filters are URL-encoded with a reset.
+
+**Charting choice:** charts are **server-rendered SVG** (`BarChart`,
+`chart-series.ts`) with **no charting dependency**. The build is assumed to have
+no reliable network, so a dependency-free, deterministic SVG render keeps the
+dashboard working fully offline. Each chart has an empty state and a
+small-sample caveat.
 
 ## Scripts
 
@@ -75,7 +147,8 @@ src/
   app/
     [locale]/            Public marketplace (ca default, es, en) — homepage, farm
                          pages, search, basket, reservation confirmation.
-    admin/               Role-gated admin area: login (dev session), review queue,
+    admin/               Role-gated admin area: email+password login, forced
+                         change-password flow, review queue,
                          records/lifecycle, metrics dashboard, receipt ingestion.
     api/
       ai/{translate,receipt,metrics}/  Server-side AI endpoints (admin-gated).
@@ -112,6 +185,13 @@ a shared `validateLot()` guard as defence in depth:
   rejects any lot whose farm does not match its product (not only the guard).
 - **R10** date ordering, **R12** units ≥ 0 — SQLite `CHECK` constraints.
 - **R11** unique lot reference — unique index.
+- **M8 backing guard** — a `Lot` must reference a legacy `Product` (`productId`)
+  **or** a `FarmProductOffer` (`farmProductOfferId`); the DB `CHECK`
+  `Lot_backed_by_product_or_offer` rejects a lot with both null. This replaces a
+  blanket `NOT NULL` that would wrongly reject legitimately null rows (e.g. a
+  receipt-pre-filled legacy lot that has no offer yet). Under the two-level model
+  `Lot.farmProductOfferId` also carries a composite FK enforcing
+  `lot.farmId == offer.farmId`.
 - **R18** no oversell — `freePlaces >= 0` CHECK + a single atomic conditional
   `updateMany` in `reserve()` (zero rows affected ⇒ `CYCLE_FULL`).
 
@@ -150,6 +230,21 @@ Per-use-case flags gate the real provider (the mock is always available as a fal
 | `AI_TRANSLATION_ENABLED`  | Enable the real translation provider     |
 | `AI_METRICS_ENABLED`      | Enable the real metrics provider         |
 | `AI_RECEIPT_ENABLED`      | Enable the real receipt provider         |
+
+Five **bounded in-panel assistants** (FEAT-007) each have their own flag and are
+surfaced with a clear label in the admin panel (via the `AssistantPanel`
+component) so an operator can see exactly where each AI assistant lives and where
+the real key plugs in. Each only **drafts/suggests** copy or insights for a human
+to accept/edit/reject **with a reason**; none can set prices, approve/publish, or
+create traceability.
+
+| Variable                           | In-panel assistant                      |
+| ---------------------------------- | --------------------------------------- |
+| `AI_FARM_PROFILE_DRAFT_ENABLED`    | Farm profile / story draft              |
+| `AI_OFFER_COMPARE_ENABLED`         | Offer comparison insight                |
+| `AI_TRACEABILITY_REVIEW_ENABLED`   | Traceability review helper              |
+| `AI_METRICS_ANALYST_ENABLED`       | Metrics analyst headline                |
+| `AI_CYCLE_RECOMMENDATION_ENABLED`  | Cycle recommendation                    |
 
 When a flag is off, the key is missing, or the model is unavailable, the layer falls
 back to the mock / a no-op and never crashes.

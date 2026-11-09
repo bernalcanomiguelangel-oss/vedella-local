@@ -257,3 +257,39 @@ describe("R15: test flag excludes records from default metrics", () => {
     expect(productionLots[0].reference).toBe("R15-PROD");
   });
 });
+
+describe("M8: a lot must be backed by a product or an offer", () => {
+  it("DB CHECK rejects a lot with neither productId nor farmProductOfferId", async () => {
+    // The M8 migration (20261115000000_m8_lot_backing_guard) adds a guarded
+    // CHECK instead of a blanket NOT NULL: a lot with BOTH backing columns null
+    // is rejected by the database. This proves the invariant is enforced by the
+    // DB, not only by application code — it would fail if the migration/CHECK
+    // were reverted.
+    const farm = await makeFarm(db, { slug: "farm-m8-neither" });
+    await expect(
+      db.lot.create({
+        data: {
+          farmId: farm.id,
+          // productId and farmProductOfferId intentionally omitted (both null).
+          reference: "M8-NEITHER",
+          units: 5,
+          slaughterDate: new Date("2026-01-01"),
+          cuttingDate: new Date("2026-01-02"),
+          packingDate: new Date("2026-01-03"),
+          expiryDate: new Date("2026-02-01"),
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts a lot backed by a legacy product only (receipt-prefill path stays valid)", async () => {
+    // Receipt ingestion pre-fills a legacy Product + Lot with a null offer; that
+    // row is legitimate and must NOT be rejected (the guard is not a blanket
+    // NOT NULL on farmProductOfferId).
+    const farm = await makeFarm(db, { slug: "farm-m8-product" });
+    const product = await makeProduct(db, farm.id);
+    const lot = await makeLot(db, farm.id, product.id, { reference: "M8-PRODUCT" });
+    expect(lot.farmProductOfferId).toBeNull();
+    expect(lot.productId).toBe(product.id);
+  });
+});

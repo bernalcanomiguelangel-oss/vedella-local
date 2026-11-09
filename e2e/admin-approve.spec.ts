@@ -1,26 +1,19 @@
 import { test, expect } from "@playwright/test";
+import { loginAsPlatformAdmin, loginAsCustomerExpectDenied } from "./helpers";
 
 /**
- * Flow (b): a platform_admin logs in, approves a pending product and a machine
- * translation, publishes the product, and confirms both become visible on the
- * public marketplace.
+ * Flow (b): a platform_admin logs in (with the temporary seed password + forced
+ * change-password), approves a pending product and a machine translation,
+ * publishes the product, and confirms both become visible on the public
+ * marketplace.
  *
  * Also asserts the gating: a customer cannot reach the admin area.
  */
 
-async function loginAsPlatformAdmin(page: import("@playwright/test").Page) {
-  await page.goto("/admin/login");
-  await page.getByTestId("login-platform_admin").click();
-  await page.waitForURL("**/admin");
-  await expect(page.getByTestId("dashboard-role")).toHaveText("platform_admin");
-}
-
 test("a customer is denied access to the admin area", async ({ page }) => {
-  await page.goto("/admin/login");
-  // Signing in as a customer and landing on /admin must redirect to denied
-  // (gating is enforced server-side in requireAdmin).
-  await page.getByTestId("login-customer").click();
-  await page.waitForURL("**/admin/denied");
+  // Signing in as a customer must not reach the admin area (gating is enforced
+  // server-side); they land on the access-denied page.
+  await loginAsCustomerExpectDenied(page);
   await expect(page.getByTestId("access-denied")).toBeVisible();
 
   // Re-navigating to /admin still denies.
@@ -54,9 +47,10 @@ test("platform_admin approves a pending product and it becomes visible", async (
   await lifecycleRow.getByTestId("to-active").click();
   await expect(lifecycleRow.getByTestId("current-state")).toHaveText("active");
 
-  // Now it is publicly visible on the farm page.
+  // Now it is publicly visible on the farm page (the dynamic traceability chain
+  // also lists the name, so match the first occurrence).
   await page.goto("/ca/farms/mas-vallgorguina");
-  await expect(page.getByText("Secret de vedella")).toBeVisible();
+  await expect(page.getByText("Secret de vedella").first()).toBeVisible();
 });
 
 test("platform_admin approves a machine translation and it publishes", async ({
@@ -76,7 +70,8 @@ test("platform_admin approves a machine translation and it publishes", async ({
   await expect(tr).toBeVisible();
   await tr.getByTestId("approve-translation").click();
 
-  // The approved translation now surfaces on the English farm page.
+  // The approved translation now surfaces on the English farm page (the dynamic
+  // traceability chain also lists the name, so match the first occurrence).
   await page.goto("/en/farms/mas-vallgorguina");
-  await expect(page.getByText(/Ribeye steak \(machine\)/)).toBeVisible();
+  await expect(page.getByText(/Ribeye steak \(machine\)/).first()).toBeVisible();
 });

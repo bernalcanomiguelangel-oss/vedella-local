@@ -109,3 +109,133 @@ export const MetricsSummarySchema = z.object({
     .default([]),
 });
 export type MetricsSummary = z.infer<typeof MetricsSummarySchema>;
+
+// ---------------------------------------------------------------------------
+// Bounded in-panel assistants (FEAT-007, decision 7 / R-AI1/R-AI2).
+//
+// The five assistants ONLY draft or suggest copy/insights for a human to
+// accept/edit/reject. Their schemas deliberately model NO price, approval,
+// lifecycle, status or role field — and the guardrail filter additionally
+// strips any such field at any depth. Every factual claim must reference a
+// source field OR be marked needs-evidence.
+// ---------------------------------------------------------------------------
+
+/** A single suggested copy field a human may accept/edit/reject. */
+export const SuggestedFieldSchema = z.object({
+  field: z.string().min(1).max(60),
+  suggestion: z.string().max(4000),
+  /** Where the suggestion is grounded, or null -> needsEvidence must be true. */
+  evidence: EvidenceSchema,
+});
+export type SuggestedField = z.infer<typeof SuggestedFieldSchema>;
+
+/**
+ * 1. farmProfileDraft — drafts storytelling/profile copy from EXISTING farm
+ * facts. Never invents certifications, breeds, provenance or sustainability
+ * claims; unsupported lines are marked needs-evidence.
+ */
+export const FarmProfileDraftSchema = z.object({
+  assistant: z.literal("farmProfileDraft"),
+  summary: z.string().max(600).default(""),
+  fields: z.array(SuggestedFieldSchema).max(20).default([]),
+  notes: z.string().max(1000).default(""),
+});
+export type FarmProfileDraft = z.infer<typeof FarmProfileDraftSchema>;
+
+/**
+ * 2. offerCompare — a READ-ONLY comparison of offers for the same definition
+ * across farms. It reports observed facts (names/weights, and observed prices
+ * as read-only context) and NEVER recommends or sets a price. Any price-like
+ * field is additionally stripped by the guardrail filter.
+ */
+export const OfferCompareSchema = z.object({
+  assistant: z.literal("offerCompare"),
+  definitionName: z.string().max(120).default(""),
+  headline: z.string().max(400).default(""),
+  rows: z
+    .array(
+      z.object({
+        farmName: z.string().max(120),
+        offerName: z.string().max(120),
+        observedWeight: z.string().max(80).nullable().default(null),
+        observedMaturation: z.string().max(80).nullable().default(null),
+        note: z.string().max(400).default(""),
+        evidence: EvidenceSchema,
+      }),
+    )
+    .max(50)
+    .default([]),
+  notes: z.string().max(1000).default(""),
+});
+export type OfferCompare = z.infer<typeof OfferCompareSchema>;
+
+/**
+ * 3. traceabilityReview — reviews a Farm->Lot->Offer->Pack chain for GAPS and
+ * flags them for a human. It never creates/edits a traceability record; it only
+ * lists findings each referencing the record it came from.
+ */
+export const TraceabilityReviewSchema = z.object({
+  assistant: z.literal("traceabilityReview"),
+  chainRef: z.string().max(200).default(""),
+  findings: z
+    .array(
+      z.object({
+        severity: z.enum(["info", "warning"]),
+        message: z.string().max(400),
+        evidence: EvidenceSchema,
+      }),
+    )
+    .max(50)
+    .default([]),
+  complete: z.boolean().default(false),
+  notes: z.string().max(1000).default(""),
+});
+export type TraceabilityReview = z.infer<typeof TraceabilityReviewSchema>;
+
+/**
+ * 4. metricsAnalyst — phrases a narrative over server-computed metrics. The
+ * numbers are computed from the DB (never invented); the assistant only writes
+ * a neutral insight sentence and optional bullet observations.
+ */
+export const MetricsAnalystSchema = z.object({
+  assistant: z.literal("metricsAnalyst"),
+  weekStart: z.string().max(40).default(""),
+  headline: z.string().max(400).default(""),
+  observations: z.array(z.string().max(300)).max(20).default([]),
+  notes: z.string().max(1000).default(""),
+});
+export type MetricsAnalyst = z.infer<typeof MetricsAnalystSchema>;
+
+/**
+ * 5. cycleRecommendation — drafts NON-BINDING operational suggestions for the
+ * next reservation cycle (e.g. zone/timing copy), grounded in the current
+ * cycle's real facts. It never sets capacity, prices or dates — it suggests
+ * text a human may use when a human creates/edits a cycle.
+ */
+export const CycleRecommendationSchema = z.object({
+  assistant: z.literal("cycleRecommendation"),
+  cycleRef: z.string().max(200).default(""),
+  headline: z.string().max(400).default(""),
+  suggestions: z
+    .array(
+      z.object({
+        topic: z.string().max(80),
+        suggestion: z.string().max(600),
+        evidence: EvidenceSchema,
+      }),
+    )
+    .max(20)
+    .default([]),
+  notes: z.string().max(1000).default(""),
+});
+export type CycleRecommendation = z.infer<typeof CycleRecommendationSchema>;
+
+/** Discriminated union of every assistant output. */
+export const AssistantOutputSchema = z.discriminatedUnion("assistant", [
+  FarmProfileDraftSchema,
+  OfferCompareSchema,
+  TraceabilityReviewSchema,
+  MetricsAnalystSchema,
+  CycleRecommendationSchema,
+]);
+export type AssistantOutput = z.infer<typeof AssistantOutputSchema>;

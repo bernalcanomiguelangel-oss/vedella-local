@@ -45,8 +45,15 @@ async function resolveEntityFarm(
   }
   if (entityType === "product") {
     const product = await prisma.product.findUnique({ where: { id: entityId } });
-    if (!product) return null;
-    return { farmId: product.farmId, lifecycle: product.lifecycle };
+    if (product) return { farmId: product.farmId, lifecycle: product.lifecycle };
+    // Fall back to a FarmProductOffer: the review queue surfaces offers under
+    // the "product" entity type, and the offer-model approval path (M8)
+    // transitions the offer the public read path renders.
+    const offer = await prisma.farmProductOffer.findUnique({
+      where: { id: entityId },
+    });
+    if (offer) return { farmId: offer.farmId, lifecycle: offer.lifecycle };
+    return null;
   }
   return null;
 }

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
+import { loginAsPlatformAdmin } from "./helpers";
 
 /**
  * Receipt flow: an admin uploads a receipt, the AI pre-fills a human review form
@@ -9,10 +10,8 @@ import path from "node:path";
 test("receipt upload pre-fills a form; submitting creates a pending_review record", async ({
   page,
 }) => {
-  // Sign in as platform admin.
-  await page.goto("/admin/login");
-  await page.getByTestId("login-platform_admin").click();
-  await page.waitForURL("**/admin");
+  // Sign in as platform admin (temporary password + forced change-password).
+  await loginAsPlatformAdmin(page);
 
   await page.goto("/admin/receipts");
   await expect(

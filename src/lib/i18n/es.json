@@ -7,6 +7,25 @@
     "basket": "Cesta",
     "search": "Buscar"
   },
+  "admin": {
+    "title": "Administración",
+    "nav": {
+      "overview": "Resumen",
+      "metrics": "Métricas",
+      "farms": "Granjas",
+      "products": "Productos y packs",
+      "lots": "Lotes",
+      "cycles": "Ciclos",
+      "orders": "Pedidos",
+      "incidents": "Incidencias",
+      "websiteText": "Textos web",
+      "users": "Usuarios y permisos",
+      "review": "Revisión",
+      "audit": "Registro de actividad",
+      "settings": "Ajustes",
+      "logout": "Cerrar sesión"
+    }
+  },
   "hero": {
     "eyebrow": "Mercado de proximidad",
     "title": "Ternera local y trazable de Cataluña",
@@ -41,6 +60,33 @@
       "fairDesc": "Sin intermediarios. Descuentos por volumen y entrega refrigerada."
     }
   },
+  "notify": {
+    "title": "¿Quieres que te avisemos del próximo ciclo?",
+    "subtitle": "Déjanos tu correo y te escribiremos cuando se abra una nueva reserva. Sin marketing, solo el aviso.",
+    "placeholder": "Tu correo electrónico",
+    "button": "Avísame",
+    "success": "¡Perfecto! Te avisaremos cuando se abra el próximo ciclo.",
+    "error": "No hemos podido guardar tu correo. Inténtalo de nuevo."
+  },
+  "cycle": {
+    "title": "Ciclo de reserva activo",
+    "zone": "Zona",
+    "method": "Método",
+    "methodDelivery": "Entrega refrigerada",
+    "methodDeliveryOrPickup": "Entrega o recogida",
+    "close": "Cierre de reservas",
+    "delivery": "Entrega prevista",
+    "pickup": "Recogida",
+    "deliveryPrice": "Coste de entrega",
+    "places": "Plazas libres",
+    "closesIn": "Cierra en",
+    "closed": "Reservas cerradas",
+    "days": "d",
+    "hours": "h",
+    "minutes": "m",
+    "seconds": "s",
+    "none": "Ahora mismo no hay ningún ciclo de reserva abierto."
+  },
   "farm": {
     "backToMarket": "Volver al mercado",
     "foundedIn": "Desde",
@@ -52,6 +98,8 @@
     "units": "u.",
     "traceability": "Trazabilidad",
     "lot": "Lote",
+    "farmLabel": "Granja",
+    "multiFarm": "Pack multigranja",
     "noProducts": "Esta granja todavía no tiene productos publicados."
   },
   "product": {

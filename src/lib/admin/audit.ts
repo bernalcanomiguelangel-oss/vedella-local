@@ -16,7 +16,36 @@ export type AdminAction =
   | "reject_translation"
   | "receipt_prefill_create"
   | "run_metrics"
-  | "translate_request";
+  | "translate_request"
+  | "create_user"
+  | "assign_role"
+  | "assign_farm"
+  // FEAT-004 human actions.
+  | "offer_self_edit"
+  | "offer_submit_review"
+  | "offer_create_pending"
+  | "profile_submit_review"
+  | "profile_approve"
+  | "profile_reject"
+  | "cert_submit"
+  | "cert_approve"
+  | "cert_reject"
+  | "lot_create_pending"
+  | "lot_create"
+  | "pack_create"
+  | "pack_accept"
+  | "pack_decline"
+  | "pack_publish"
+  | "cycle_transition"
+  | "cycle_add_farm"
+  | "cycle_remove_farm"
+  // FEAT-006 human actions.
+  | "incident_create"
+  | "incident_update"
+  | "incident_withdraw_lot"
+  | "website_text_draft"
+  | "website_text_publish"
+  | "setting_update";
 
 export interface AdminAuditInput {
   actor: SessionUser;
