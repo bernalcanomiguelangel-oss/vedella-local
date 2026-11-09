@@ -231,7 +231,28 @@ function lotDates(baseDaysAgo: number) {
 async function main() {
   console.log("Seeding Vedella Local...");
 
-  // Clean slate (safe for a dev SQLite DB).
+  // IDEMPOTENCY GUARD (safe for repeated deploys). The seed below wipes every
+  // table and recreates the demo marketplace from scratch, which is correct for
+  // a fresh/empty database but would DESTROY real data on a second deploy. So we
+  // only run the destructive delete+recreate path when the marketplace has not
+  // been seeded yet. We treat the DB as "already seeded" if EITHER the main
+  // admin user OR the first example farm already exists. On a re-run we log a
+  // clear message and EXIT without deleting or duplicating anything.
+  const [existingAdmin, existingFarm] = await Promise.all([
+    prisma.user.findUnique({ where: { email: MAIN_ADMIN_EMAIL } }),
+    prisma.farm.findUnique({ where: { slug: FARMS[0].slug } }),
+  ]);
+  if (existingAdmin || existingFarm) {
+    console.log(
+      "  ↷ Marketplace already seeded (found main admin and/or example farm). " +
+        "Skipping seed: no data was deleted, created, or duplicated.",
+    );
+    console.log("Seed skipped (already seeded).");
+    return;
+  }
+
+  // Clean slate (first/empty run only; the guard above ensures this never runs
+  // against an already-populated database).
   await prisma.analyticsEvent.deleteMany();
   await prisma.channelAttribution.deleteMany();
   await prisma.interestedContact.deleteMany();
