@@ -43,6 +43,10 @@ export type AiUseCase =
   | "translate"
   | "metrics"
   | "receipt"
+  // A/B-testing copy proposer + LLM-as-judge (FEAT-004). Its own flag so the
+  // loop has an independent on/off switch and its AiRun audit rows are labelled
+  // honestly (not borrowed from another use case).
+  | "copyAbTesting"
   | AiAssistantUseCase;
 
 export const ASSISTANT_USE_CASES: AiAssistantUseCase[] = [
@@ -221,6 +225,8 @@ export interface AiConfig {
     traceabilityReview: boolean;
     metricsAnalyst: boolean;
     cycleRecommendation: boolean;
+    // A/B-testing copy proposer + LLM-as-judge (FEAT-004).
+    copyAbTesting: boolean;
   };
 }
 
@@ -254,6 +260,7 @@ export function readAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
       traceabilityReview: envFlag(env.AI_TRACEABILITY_REVIEW_ENABLED),
       metricsAnalyst: envFlag(env.AI_METRICS_ANALYST_ENABLED),
       cycleRecommendation: envFlag(env.AI_CYCLE_RECOMMENDATION_ENABLED),
+      copyAbTesting: envFlag(env.AI_COPY_AB_TESTING_ENABLED),
     },
   };
 }
@@ -277,6 +284,8 @@ export function flagForUseCase(config: AiConfig, useCase: AiUseCase): boolean {
       return config.flags.metricsAnalyst;
     case "cycleRecommendation":
       return config.flags.cycleRecommendation;
+    case "copyAbTesting":
+      return config.flags.copyAbTesting;
   }
 }
 

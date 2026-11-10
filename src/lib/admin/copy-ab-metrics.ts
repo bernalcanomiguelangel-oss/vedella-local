@@ -176,9 +176,14 @@ export async function computeExperimentMetrics(
  * Disagreements are also surfaced (separately) so the human can inspect them;
  * they are NOT folded into either agreement count.
  *
- * We match a judge evaluation to a human decision by variant text + farm +
- * locale (the HumanDecisionExample snapshot stores the exact variant text the
- * human decided on). This keeps the data auditable without inventing a score.
+ * We match a judge evaluation to a human decision by the STABLE
+ * HumanDecisionExample.copyVariantId (the id of the CopyVariant the human
+ * decided on), NOT by variant text. An 'edit' decision replaces the variant's
+ * text while the example keeps the pre-edit snapshot, so a text join would
+ * silently drop edited variants — exactly the most interesting disagreement
+ * signal. Joining on the id keeps them counted and removes the text-collision
+ * risk where two variants share identical text. This keeps the data auditable
+ * without inventing a score.
  */
 export interface JudgeAgreementSummary {
   /** Judge said FAIL and the human rejected/edited. */
@@ -212,19 +217,23 @@ export async function computeJudgeAgreement(
     include: { evaluations: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
 
-  // Human decisions for this farm+locale, keyed by the exact variant text the
-  // human decided on (the auditable snapshot).
+  // Human decisions for this farm+locale, keyed by the STABLE copyVariantId the
+  // human decided on. Edits update CopyVariant.text but the id never changes, so
+  // this join keeps edited variants matched (a text join would drop them).
   const decisions = await db.humanDecisionExample.findMany({
     where: {
       farmId,
+      copyVariantId: { not: null },
       ...(opts.locale ? { locale: opts.locale } : {}),
     },
     orderBy: { createdAt: "desc" },
   });
-  // Most-recent human verdict per variant text.
-  const humanByText = new Map<string, string>();
+  // Most-recent human verdict per variant id.
+  const humanById = new Map<string, string>();
   for (const d of decisions) {
-    if (!humanByText.has(d.variantText)) humanByText.set(d.variantText, d.verdict);
+    if (d.copyVariantId && !humanById.has(d.copyVariantId)) {
+      humanById.set(d.copyVariantId, d.verdict);
+    }
   }
 
   let failuresCaught = 0;
@@ -235,7 +244,7 @@ export async function computeJudgeAgreement(
 
   for (const v of variants) {
     const judge = v.evaluations[0]?.verdict;
-    const human = humanByText.get(v.text);
+    const human = humanById.get(v.id);
     if (!judge || !human) continue; // only compare when BOTH exist
     if (judge === "UNKNOWN") continue; // UNKNOWN is not an agreement signal
     comparedPairs += 1;

@@ -357,6 +357,27 @@ create traceability.
 | `AI_METRICS_ANALYST_ENABLED`       | Metrics analyst headline                |
 | `AI_CYCLE_RECOMMENDATION_ENABLED`  | Cycle recommendation                    |
 
+The **A/B-testing copy loop** (FEAT-004) has its own flag so it can be switched
+on/off independently and its `AiRun` audit rows are labelled honestly (use case
+`copyAbTesting`):
+
+| Variable                       | A/B copy loop                                     |
+| ------------------------------ | ------------------------------------------------- |
+| `AI_COPY_AB_TESTING_ENABLED`   | AI proposer + LLM-as-judge for product copy       |
+
+The proposer only **drafts** `draft` variants and the judge only **scores** them
+PASS/FAIL/UNKNOWN; a human always decides, approves and publishes. The AI never
+sets a price, approves/publishes, or flips status.
+
+> **Receipt extraction is text-only on the real providers.** Both the Gemini and
+> OpenAI `extractReceipt` paths send the pre-OCR'd `text` field (wrapped as
+> untrusted data) to a JSON model; they do **not** run OCR or send raw image/PDF
+> bytes to a vision model. With only binary bytes and no `text`, the model
+> receives a `[binary ... upload]` placeholder and returns little of use, so a
+> real image/PDF receipt needs OCR text supplied upstream. This is acceptable
+> because extraction only **pre-fills a human-review form** and never creates or
+> approves any traceability record.
+
 When a flag is off, the key is missing, or the model is unavailable, the layer falls
 back to the mock / a no-op and never crashes.
 

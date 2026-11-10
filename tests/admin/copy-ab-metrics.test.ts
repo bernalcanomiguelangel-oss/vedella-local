@@ -163,7 +163,7 @@ describe("judge-vs-human agreement split", () => {
     });
     await prisma.judgeEvaluation.create({ data: { copyVariantId: vFail.id, verdict: "FAIL", reason: "fabricated" } });
     await prisma.humanDecisionExample.create({
-      data: { farmId: farmA, locale: "ca", variantText: "bad copy", verdict: "reject", reason: "agree, drop it" },
+      data: { farmId: farmA, locale: "ca", copyVariantId: vFail.id, variantText: "bad copy", verdict: "reject", reason: "agree, drop it" },
     });
 
     // Variant with judge PASS + human approve -> a pass agreed.
@@ -172,7 +172,7 @@ describe("judge-vs-human agreement split", () => {
     });
     await prisma.judgeEvaluation.create({ data: { copyVariantId: vPass.id, verdict: "PASS", reason: "grounded" } });
     await prisma.humanDecisionExample.create({
-      data: { farmId: farmA, locale: "ca", variantText: "good copy", verdict: "approve", reason: "ship it" },
+      data: { farmId: farmA, locale: "ca", copyVariantId: vPass.id, variantText: "good copy", verdict: "approve", reason: "ship it" },
     });
 
     const agreement = await computeJudgeAgreement(prisma, farmA);
@@ -185,6 +185,44 @@ describe("judge-vs-human agreement split", () => {
     // There is NO single collapsed accuracy field.
     expect(Object.keys(agreement)).not.toContain("accuracy");
     expect(Object.keys(agreement)).not.toContain("agreementRate");
+  });
+
+  it("counts an EDITED variant (text changed after the human 'edit') via the id join", async () => {
+    // A variant the human EDITED: after the edit, CopyVariant.text no longer
+    // matches the HumanDecisionExample snapshot. This case was silently dropped
+    // by the old variantText join; the copyVariantId join keeps it counted.
+    const vEdit = await prisma.copyVariant.create({
+      data: {
+        farmProductOfferId: offerA,
+        farmId: farmA,
+        locale: "en",
+        // Current (post-edit) text differs from the decision snapshot below.
+        text: "edited final text",
+        source: "human",
+        status: "pending",
+      },
+    });
+    // Judge said FAIL on the pre-edit text.
+    await prisma.judgeEvaluation.create({ data: { copyVariantId: vEdit.id, verdict: "FAIL", reason: "needed work" } });
+    // Human 'edit' decision: variantText is the PRE-edit snapshot, editedText is
+    // the new text, and copyVariantId is the stable join key.
+    await prisma.humanDecisionExample.create({
+      data: {
+        farmId: farmA,
+        locale: "en",
+        copyVariantId: vEdit.id,
+        variantText: "original pre-edit text",
+        verdict: "edit",
+        reason: "tightened wording",
+        editedText: "edited final text",
+      },
+    });
+
+    const agreement = await computeJudgeAgreement(prisma, farmA, { locale: "en" });
+    // judge FAIL + human edit (reject-or-edit bucket) => a failure caught, and
+    // the edited variant IS in the compared set (it would be 0 under a text join).
+    expect(agreement.comparedPairs).toBe(1);
+    expect(agreement.failuresCaught).toBe(1);
   });
 
   it("isolation: farm B sees none of farm A's agreement data", async () => {

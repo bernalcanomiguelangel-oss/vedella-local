@@ -178,7 +178,13 @@ export async function decideCopyVariant(
     data: {
       farmId: variant.farmId,
       locale: variant.locale,
+      // Stable id of the variant this decision was about. The agreement metric
+      // joins on THIS (not variantText) so an 'edit' — which replaces the
+      // variant's text — still matches its own decision.
+      copyVariantId: variant.id,
       offerContext,
+      // variantText keeps the PRE-decision snapshot (what the human saw) for
+      // the audit trail / few-shot replay; it is intentionally NOT the join key.
       variantText: variant.text,
       verdict: input.decision,
       reason,

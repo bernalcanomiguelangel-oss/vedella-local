@@ -238,6 +238,12 @@ export function buildAiDiagnostics(env: NodeJS.ProcessEnv = process.env): AiDiag
         location: "/admin/cycles",
         flagEnabled: config.flags.cycleRecommendation,
       },
+      {
+        useCase: "copyAbTesting",
+        label: "A/B de descripcions + jutge (proposa i puntua; l'humà decideix)",
+        location: "/admin/copy",
+        flagEnabled: config.flags.copyAbTesting,
+      },
     ],
     keyConfigLocation:
       "Fitxer .env (ignorat per git) a l'arrel del projecte, o les variables d'entorn de Vercel",

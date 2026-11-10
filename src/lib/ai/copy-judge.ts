@@ -118,7 +118,7 @@ export async function judgeCopyVariant(
   let flagEnabled = false;
 
   try {
-    const resolved = await getAiProvider("farmProfileDraft");
+    const resolved = await getAiProvider("copyAbTesting");
     providerName = resolved.provider.name;
     model = resolved.provider.model;
     promptVersion = resolved.provider.promptVersion;
@@ -153,7 +153,8 @@ export async function judgeCopyVariant(
   }
 
   const aiRunId = await recordAiRun({
-    useCase: "farmProfileDraft",
+    // Dedicated A/B-testing use case (its own feature flag + honest audit label).
+    useCase: "copyAbTesting",
     provider: providerName,
     model,
     promptVersion,

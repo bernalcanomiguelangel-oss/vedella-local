@@ -1006,6 +1006,12 @@ model HumanDecisionExample {
   id             String  @id @default(cuid())
   farmId         String? // scope: null = platform-wide example
   locale         String? // scope: null = all locales
+  // Stable id of the CopyVariant this decision was about. Nullable because older
+  // rows (and platform-wide examples not tied to a specific variant) may not set
+  // it. Joining the judge-vs-human agreement metric on THIS (not variantText)
+  // keeps edited variants matched: an 'edit' updates CopyVariant.text while the
+  // example keeps the pre-edit text snapshot, so a text join silently drops them.
+  copyVariantId  String?
   // Snapshot of the structured facts the decision was about (JSON string).
   offerContext   String  @default("")
   variantText    String
@@ -1018,4 +1024,5 @@ model HumanDecisionExample {
 
   @@index([farmId])
   @@index([locale])
+  @@index([copyVariantId])
 }

@@ -126,7 +126,7 @@ export async function proposeCopyVariants(
   let flagEnabled = false;
 
   try {
-    const resolved = await getAiProvider("farmProfileDraft");
+    const resolved = await getAiProvider("copyAbTesting");
     providerName = resolved.provider.name;
     model = resolved.provider.model;
     promptVersion = resolved.provider.promptVersion;
@@ -160,9 +160,9 @@ export async function proposeCopyVariants(
   }
 
   const aiRunId = await recordAiRun({
-    // Reuse the farmProfileDraft use case label (copy drafting is a draft-only
-    // assistant). Its feature flag gates whether the REAL provider is used.
-    useCase: "farmProfileDraft",
+    // Dedicated A/B-testing use case: its own feature flag gates whether the
+    // REAL provider is used, and the AiRun audit row is labelled honestly.
+    useCase: "copyAbTesting",
     provider: providerName,
     model,
     promptVersion,

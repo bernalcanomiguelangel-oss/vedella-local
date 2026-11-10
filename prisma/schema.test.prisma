@@ -953,6 +953,7 @@ model HumanDecisionExample {
   id             String  @id @default(cuid())
   farmId         String?
   locale         String?
+  copyVariantId  String?
   offerContext   String  @default("")
   variantText    String
   verdict        String
@@ -964,4 +965,5 @@ model HumanDecisionExample {
 
   @@index([farmId])
   @@index([locale])
+  @@index([copyVariantId])
 }
