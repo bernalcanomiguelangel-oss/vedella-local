@@ -49,7 +49,13 @@ export type AdminAction =
   | "incident_withdraw_lot"
   | "website_text_draft"
   | "website_text_publish"
-  | "setting_update";
+  | "setting_update"
+  // FEAT-004 A/B-testing copy loop human actions.
+  | "copy_propose"
+  | "copy_variant_decide"
+  | "copy_judge_rule_create"
+  | "copy_experiment_start"
+  | "copy_experiment_decide";
 
 export interface AdminAuditInput {
   actor: SessionUser;

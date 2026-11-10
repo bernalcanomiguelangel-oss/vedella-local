@@ -22,6 +22,8 @@ import type {
   AssistantFacts,
   OfferCompareFacts,
   TraceabilityFacts,
+  ProposeCopyInput,
+  JudgeCopyInput,
 } from "./provider";
 import type {
   TranslationResult,
@@ -32,8 +34,36 @@ import type {
   TraceabilityReview,
   MetricsAnalyst,
   CycleRecommendation,
+  CopyProposal,
+  JudgeVerdict,
 } from "./schemas";
 import { formatCents } from "@/lib/pricing";
+
+/**
+ * Keywords a grounded product description must never contain: fabricated
+ * certification/medical/nutrition/sustainability/scarcity claims. The mock judge
+ * FAILs any variant containing one so the offline demo exercises the guardrail
+ * intent. These mirror the ai-guardrails steering ("never fabricate
+ * certifications, breeds, provenance, scarcity, medical/nutrition, or
+ * sustainability claims"). This is a deterministic heuristic, NOT model
+ * training.
+ */
+const FABRICATION_KEYWORDS = [
+  "certified",
+  "certified organic",
+  "organic",
+  "cures",
+  "cure ",
+  "medicinal",
+  "healthier than",
+  "lose weight",
+  "last units",
+  "only .* left",
+  "limited stock",
+  "carbon neutral",
+  "best in the world",
+  "award-winning",
+];
 
 /** Locale tags appended to the source so mock translations are distinguishable
  * and deterministic without pretending to be real translations. */
@@ -295,4 +325,141 @@ export class MockAiProvider implements AiProvider {
         : "",
     };
   }
+
+  // -------------------------------------------------------------------------
+  // A/B-testing copy proposer + LLM-as-judge (FEAT-004). Deterministic and
+  // offline: same facts -> same variants -> same verdict, every time, so the
+  // whole loop is demoable with no API key.
+  //
+  // IMPORTANT: the "learning" here is purely example-ACCUMULATION. The mock
+  // reads the accumulated HumanDecisionExample few-shots in `humanExamples` and
+  // lets them bias its deterministic choices (e.g. it avoids phrasings a human
+  // rejected and the judge tightens toward human verdicts); it NEVER trains or
+  // fine-tunes a model. There is no model here at all.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Draft `count` alternative descriptions from ONLY the provided structured
+   * facts. The mock composes sentences by reordering/trimming the facts; it
+   * never invents a certification/medical/scarcity claim and never emits a
+   * price. Each variant records the exact fact keys it used as evidence.
+   */
+  async proposeCopy(input: ProposeCopyInput): Promise<CopyProposal> {
+    // Collect only non-null, non-price facts. Price-like keys are NEVER used to
+    // generate copy (AI never prices); the guardrail filter also strips them.
+    const factPairs = Object.entries(input.facts).filter(
+      ([key, value]) =>
+        value !== null &&
+        value !== undefined &&
+        String(value).length > 0 &&
+        !/price|amount|cost|discount|currency/i.test(key),
+    );
+    const name = String(input.facts.publicName ?? input.facts.canonicalName ?? "");
+
+    // Rejected phrasings from accumulated human examples are avoided so the mock
+    // visibly "learns" from the human decision history (example accumulation).
+    const rejectedTexts = input.humanExamples
+      .filter((e) => e.verdict === "reject")
+      .map((e) => e.variantText.toLowerCase());
+
+    const templates: ((pairs: [string, unknown][]) => string)[] = [
+      // Variant 1: name first, then facts in natural order.
+      (pairs) =>
+        `${name}. ` +
+        pairs.map(([k, v]) => `${humaniseKey(k)}: ${v}`).join(". ") +
+        ".",
+      // Variant 2: reordered (reversed) facts, trimmed phrasing.
+      (pairs) =>
+        `${name} — ` +
+        [...pairs].reverse().map(([, v]) => String(v)).join(", ") +
+        ".",
+      // Variant 3: concise single clause.
+      (pairs) =>
+        `${name}: ${pairs.slice(0, 2).map(([, v]) => String(v)).join(", ")}.`,
+    ];
+
+    const variants: CopyProposal["variants"] = [];
+    for (let i = 0; i < input.count && variants.length < templates.length + 1; i++) {
+      const tmpl = templates[i % templates.length];
+      let text = tmpl(factPairs).trim();
+      // If this phrasing matches one a human rejected, nudge it so the mock does
+      // not re-propose a rejected variant verbatim.
+      if (rejectedTexts.includes(text.toLowerCase())) {
+        text = `${text} (revisat segons decisions anteriors)`;
+      }
+      variants.push({ text, evidence: factPairs.map(([k]) => `offer.${k}`) });
+    }
+    if (variants.length === 0) {
+      // Always return at least one grounded variant (schema requires >=1).
+      variants.push({
+        text: name.length > 0 ? name : "Descripció pendent de dades.",
+        evidence: name ? ["offer.publicName"] : [],
+      });
+    }
+    return { variants: variants.slice(0, Math.max(1, input.count)) };
+  }
+
+  /**
+   * Score one variant PASS/FAIL/UNKNOWN. Deterministic rules:
+   *  - UNKNOWN when the text is empty (safe fallback).
+   *  - FAIL when the text contains a fabricated/medical/scarcity keyword, OR
+   *    matches a phrasing a human previously REJECTED (example accumulation), OR
+   *    clearly references a fact not present in `facts` is NOT attempted here
+   *    (the proposer is grounded; the judge focuses on forbidden claims).
+   *  - PASS otherwise.
+   * The human-authored `rules` and accumulated `humanExamples` are consulted so
+   * the verdict tracks human criteria over time — by accumulating examples, not
+   * by training a model.
+   */
+  async judgeCopy(input: JudgeCopyInput): Promise<JudgeVerdict> {
+    const text = input.variantText.trim();
+    if (text.length === 0) {
+      return { verdict: "UNKNOWN", reason: "Empty variant text; cannot judge." };
+    }
+    const lower = text.toLowerCase();
+    const bad = FABRICATION_KEYWORDS.find((kw) =>
+      new RegExp(kw).test(lower),
+    );
+    if (bad) {
+      return {
+        verdict: "FAIL",
+        reason: `Contains a forbidden/fabricated claim ("${bad}") not backed by the offer facts.`,
+      };
+    }
+    // Example accumulation: if a human rejected this exact phrasing before, the
+    // judge FAILs it, tightening toward the accumulated human criterion.
+    const humanRejected = input.humanExamples.some(
+      (e) => e.verdict === "reject" && e.variantText.trim().toLowerCase() === lower,
+    );
+    if (humanRejected) {
+      return {
+        verdict: "FAIL",
+        reason: "Matches a variant a human previously rejected (learned from examples).",
+      };
+    }
+    const ruleNote =
+      input.rules.length > 0
+        ? ` Checked against ${input.rules.length} human-authored rule(s).`
+        : "";
+    return {
+      verdict: "PASS",
+      reason: `Grounded in the offer facts with no fabricated/medical/scarcity claim.${ruleNote}`,
+    };
+  }
+}
+
+/** Humanise a fact key for the mock copy (e.g. maturationDays -> "Maduració"). */
+function humaniseKey(key: string): string {
+  const map: Record<string, string> = {
+    maturationDays: "Maduració (dies)",
+    packagingMethod: "Envàs",
+    storageState: "Conservació",
+    minimumShelfLifeDays: "Caducitat mínima (dies)",
+    thicknessMm: "Gruix (mm)",
+    expectedUnitWeightMinG: "Pes mínim (g)",
+    expectedUnitWeightMaxG: "Pes màxim (g)",
+    canonicalName: "Tall",
+    publicName: "Nom",
+  };
+  return map[key] ?? key;
 }

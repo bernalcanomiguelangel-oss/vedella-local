@@ -29,6 +29,8 @@ import type {
   AssistantFacts,
   OfferCompareFacts,
   TraceabilityFacts,
+  ProposeCopyInput,
+  JudgeCopyInput,
 } from "./provider";
 import {
   TranslationResultSchema,
@@ -39,6 +41,8 @@ import {
   TraceabilityReviewSchema,
   MetricsAnalystSchema,
   CycleRecommendationSchema,
+  CopyProposalSchema,
+  JudgeVerdictSchema,
   type TranslationResult,
   type ReceiptExtraction,
   type MetricsSummary,
@@ -47,8 +51,11 @@ import {
   type TraceabilityReview,
   type MetricsAnalyst,
   type CycleRecommendation,
+  type CopyProposal,
+  type JudgeVerdict,
 } from "./schemas";
 import { wrapUntrusted } from "./sanitize";
+import { buildProposeCopyPrompt, buildJudgeCopyPrompt } from "./copy-prompts";
 
 const PROMPT_VERSION = "gemini-1";
 const DEFAULT_MODEL = "gemini-1.5-flash";
@@ -271,5 +278,24 @@ class GeminiProvider implements AiProvider {
     return CycleRecommendationSchema.parse(
       await this.#generateJson(this.#assistantSystem, prompt),
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // A/B-testing copy proposer + LLM-as-judge (FEAT-004). The shared prompt
+  // builders (copy-prompts.ts) fence the offer facts, the human-authored rules,
+  // and every accumulated human-decision example as DATA (sanitize.ts). The
+  // "learning" is accumulated EXAMPLES replayed in-context, never model
+  // training. Output is Zod-validated; a parse failure throws so the service
+  // records `invalid` and the judge safely falls back to UNKNOWN.
+  // -------------------------------------------------------------------------
+
+  async proposeCopy(input: ProposeCopyInput): Promise<CopyProposal> {
+    const { system, prompt } = buildProposeCopyPrompt(input);
+    return CopyProposalSchema.parse(await this.#generateJson(system, prompt));
+  }
+
+  async judgeCopy(input: JudgeCopyInput): Promise<JudgeVerdict> {
+    const { system, prompt } = buildJudgeCopyPrompt(input);
+    return JudgeVerdictSchema.parse(await this.#generateJson(system, prompt));
   }
 }

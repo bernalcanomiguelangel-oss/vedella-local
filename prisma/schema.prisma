@@ -112,6 +112,8 @@ model Farm {
   cycleParticipations CycleFarm[]
   cycleOfferAvailability CycleOfferAvailability[]
   fulfilmentGroups FulfilmentGroup[]
+  copyVariants CopyVariant[]
+  copyExperiments CopyExperiment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -282,6 +284,8 @@ model FarmProductOffer {
   packItems PackItemV2[]
   orderItems OrderItem[]
   cycleOfferAvailability CycleOfferAvailability[]
+  copyVariants CopyVariant[]
+  copyExperiments CopyExperiment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -851,4 +855,162 @@ model MarketPriceSnapshot {
   createdAt     DateTime @default(now())
 
   @@unique([cutName, weekStart])
+}
+
+// ---------------------------------------------------------------------------
+// AI-assisted A/B testing + LLM-as-judge learning loop for PRODUCT
+// DESCRIPTIONS (FEAT-004 of the blob/gemini/ab-testing task).
+//
+// The loop is strictly human-approved and auditable:
+//   1. The AI PROPOSER drafts alternative descriptions for an offer+locale,
+//      grounded ONLY in that offer's real structured facts. Output is stored as
+//      CopyVariant rows with source='ai', status='draft'. The AI NEVER sets a
+//      price, NEVER approves/publishes, NEVER flips status.
+//   2. An LLM-as-JUDGE scores each variant PASS/FAIL/UNKNOWN with a reason,
+//      using human-authored JudgeRule rows AND accumulated HumanDecisionExample
+//      few-shots. Stored as JudgeEvaluation rows. The judge never changes state.
+//   3. A HUMAN approves/edits/rejects each variant with a REQUIRED reason
+//      (approve/publish -> status approved/active is platform_admin-only,
+//      mirroring the existing human-only lifecycle rule). EVERY human decision
+//      is persisted as a HumanDecisionExample.
+//
+// LEARNING IS BY ACCUMULATED EXAMPLES (few-shot), NOT by training/fine-tuning a
+// model: HumanDecisionExample rows are fetched (scoped farm+locale, falling back
+// to platform/locale) and injected into BOTH the proposer and the judge prompts
+// on later runs. There is no model training anywhere; the "learning" substrate
+// is this auditable table of real human decisions.
+//
+// Isolation: CopyVariant/CopyExperiment carry farmId so farm A cannot read or
+// decide farm B's variants. Enum-ish fields are plain strings enforced in app
+// code (consistent with the rest of this schema).
+// ---------------------------------------------------------------------------
+
+// One candidate product description for a specific offer + locale. Produced by
+// the AI proposer (source='ai') or typed by a human (source='human'). status is
+// flipped ONLY by a human server action — the AI never touches it.
+model CopyVariant {
+  id                 String            @id @default(cuid())
+  offer              FarmProductOffer  @relation(fields: [farmProductOfferId], references: [id])
+  farmProductOfferId String
+  // Owning farm, copied from the offer for isolation + fast scoping.
+  farm               Farm              @relation(fields: [farmId], references: [id])
+  farmId             String
+  locale             String // ca | es | en
+  text               String
+  source             String            @default("ai") // ai | human
+  // draft | pending | approved | rejected | active. Only a human action sets a
+  // non-draft status; approve/active is platform_admin-only.
+  status             String            @default("draft")
+  // Optional evidence markers the proposer attached (JSON array of strings),
+  // documenting which facts each claim is grounded in. Never a price field.
+  evidenceJson       String            @default("[]")
+  // The AiRun that produced this variant (null for human-authored variants).
+  aiRunId            String?
+  // The human who created a source='human' variant (null for AI drafts).
+  createdByUserId    String?
+
+  evaluations        JudgeEvaluation[]
+  // Back-refs for the A/B experiment pairing (variant A / variant B slots).
+  experimentsAsA     CopyExperiment[]  @relation("ExperimentVariantA")
+  experimentsAsB     CopyExperiment[]  @relation("ExperimentVariantB")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmProductOfferId])
+  @@index([farmId])
+  @@index([status])
+}
+
+// An A/B experiment pairing two APPROVED variants (A vs B) for one offer+locale.
+// Measurement (clicks/reservations via the existing anonymous analytics) and the
+// final decision are handled by human-driven code; the AI never decides a winner
+// or flips status here.
+model CopyExperiment {
+  id                 String   @id @default(cuid())
+  offer              FarmProductOffer @relation(fields: [farmProductOfferId], references: [id])
+  farmProductOfferId String
+  farm               Farm     @relation(fields: [farmId], references: [id])
+  farmId             String
+  locale             String // ca | es | en
+  status             String   @default("running") // running | decided
+  variantA           CopyVariant @relation("ExperimentVariantA", fields: [variantAId], references: [id])
+  variantAId         String
+  variantB           CopyVariant @relation("ExperimentVariantB", fields: [variantBId], references: [id])
+  variantBId         String
+  startedAt          DateTime @default(now())
+  endedAt            DateTime?
+  // The winning variant, set ONLY by a human decideCopyExperiment action.
+  decidedVariantId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+  @@index([farmProductOfferId])
+}
+
+// A human-authored PASS/FAIL criterion used by the LLM-as-judge. farmId null =
+// platform-wide rule; locale null = applies to all locales. Only a human
+// (platform_admin platform-wide, farm_manager own-farm) creates these; the AI
+// never authors or edits a rule.
+model JudgeRule {
+  id              String   @id @default(cuid())
+  farmId          String? // null = platform-wide
+  locale          String? // null = all locales
+  ruleText        String
+  isActive        Boolean  @default(true)
+  createdByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+}
+
+// One verdict from the LLM-as-judge for a CopyVariant. verdict is PASS | FAIL |
+// UNKNOWN (UNKNOWN is the SAFE fallback when the model returns invalid/empty
+// output). The judge is advisory only: it never changes the variant's status or
+// any price.
+model JudgeEvaluation {
+  id            String      @id @default(cuid())
+  copyVariant   CopyVariant @relation(fields: [copyVariantId], references: [id])
+  copyVariantId String
+  verdict       String // PASS | FAIL | UNKNOWN
+  reason        String      @default("")
+  promptVersion String      @default("")
+  model         String      @default("")
+  aiRunId       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([copyVariantId])
+}
+
+// The accumulating FEW-SHOT store and the "learning" substrate. Every human
+// decision on a variant writes one row here: the structured-facts snapshot used
+// (offerContext), the variant text, the human verdict (approve|reject|edit), the
+// REQUIRED reason, and any edited text. These rows are fetched (scoped
+// farm+locale, falling back to platform/locale) and injected as few-shot
+// examples into BOTH the proposer and the judge prompts on later runs.
+//
+// IMPORTANT: this is NOT model training/fine-tuning. The model weights never
+// change. "Learning" here means accumulating real human decisions and REPLAYING
+// them as in-context examples, which keeps the whole mechanism auditable.
+model HumanDecisionExample {
+  id             String  @id @default(cuid())
+  farmId         String? // scope: null = platform-wide example
+  locale         String? // scope: null = all locales
+  // Snapshot of the structured facts the decision was about (JSON string).
+  offerContext   String  @default("")
+  variantText    String
+  verdict        String // approve | reject | edit
+  reason         String
+  editedText     String?
+  decidedByUserId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([farmId])
+  @@index([locale])
 }

@@ -23,6 +23,8 @@ import type {
   AssistantFacts,
   OfferCompareFacts,
   TraceabilityFacts,
+  ProposeCopyInput,
+  JudgeCopyInput,
 } from "./provider";
 import {
   TranslationResultSchema,
@@ -33,6 +35,8 @@ import {
   TraceabilityReviewSchema,
   MetricsAnalystSchema,
   CycleRecommendationSchema,
+  CopyProposalSchema,
+  JudgeVerdictSchema,
   type TranslationResult,
   type ReceiptExtraction,
   type MetricsSummary,
@@ -41,8 +45,11 @@ import {
   type TraceabilityReview,
   type MetricsAnalyst,
   type CycleRecommendation,
+  type CopyProposal,
+  type JudgeVerdict,
 } from "./schemas";
 import { wrapUntrusted } from "./sanitize";
+import { buildProposeCopyPrompt, buildJudgeCopyPrompt } from "./copy-prompts";
 
 const PROMPT_VERSION = "openai-1";
 
@@ -252,5 +259,22 @@ class OpenAiProvider implements AiProvider {
     return CycleRecommendationSchema.parse(
       await this.#chatJson(this.#assistantSystem, prompt),
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // A/B-testing copy proposer + LLM-as-judge (FEAT-004). Shared prompt builders
+  // (copy-prompts.ts) fence the facts, human-authored rules and accumulated
+  // human-decision few-shots as DATA. Learning is accumulated EXAMPLES, never
+  // model training. Output is Zod-validated (parse throws -> caller falls back).
+  // -------------------------------------------------------------------------
+
+  async proposeCopy(input: ProposeCopyInput): Promise<CopyProposal> {
+    const { system, prompt } = buildProposeCopyPrompt(input);
+    return CopyProposalSchema.parse(await this.#chatJson(system, prompt));
+  }
+
+  async judgeCopy(input: JudgeCopyInput): Promise<JudgeVerdict> {
+    const { system, prompt } = buildJudgeCopyPrompt(input);
+    return JudgeVerdictSchema.parse(await this.#chatJson(system, prompt));
   }
 }
