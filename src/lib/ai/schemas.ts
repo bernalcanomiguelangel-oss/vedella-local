@@ -230,6 +230,40 @@ export const CycleRecommendationSchema = z.object({
 });
 export type CycleRecommendation = z.infer<typeof CycleRecommendationSchema>;
 
+// ---------------------------------------------------------------------------
+// A/B-testing copy proposer + LLM-as-judge (FEAT-004, blob/gemini task).
+//
+// The proposer DRAFTS alternative product descriptions grounded ONLY in an
+// offer's real structured facts. Each variant carries `evidence` markers naming
+// the facts it is grounded in (so a reviewer can audit grounding). The schema
+// deliberately models NO price/approval/status field — and the guardrail filter
+// additionally strips any such field at any depth. The judge returns a strict
+// PASS/FAIL/UNKNOWN verdict with a reason; UNKNOWN is the SAFE fallback when the
+// model output is invalid/empty.
+// ---------------------------------------------------------------------------
+
+/** One proposed description variant + the facts it is grounded in. */
+export const CopyVariantProposalSchema = z.object({
+  text: z.string().min(1).max(4000),
+  /** Fact references this variant is grounded in (e.g. "offer.maturationDays").
+   * Empty is allowed but a grounded reviewer prefers at least one marker. */
+  evidence: z.array(z.string().max(200)).max(20).default([]),
+});
+export type CopyVariantProposal = z.infer<typeof CopyVariantProposalSchema>;
+
+/** The proposer returns one or more candidate variants. */
+export const CopyProposalSchema = z.object({
+  variants: z.array(CopyVariantProposalSchema).min(1).max(10),
+});
+export type CopyProposal = z.infer<typeof CopyProposalSchema>;
+
+/** A single LLM-as-judge verdict. UNKNOWN is the safe fallback. */
+export const JudgeVerdictSchema = z.object({
+  verdict: z.enum(["PASS", "FAIL", "UNKNOWN"]),
+  reason: z.string().max(1000).default(""),
+});
+export type JudgeVerdict = z.infer<typeof JudgeVerdictSchema>;
+
 /** Discriminated union of every assistant output. */
 export const AssistantOutputSchema = z.discriminatedUnion("assistant", [
   FarmProfileDraftSchema,

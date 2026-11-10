@@ -89,6 +89,53 @@ Notes:
 - Apply the variables to the **Production** environment (adding them to Preview and
   Development too is fine).
 
+### Enable Vercel Blob for farm image uploads
+
+On Vercel the serverless filesystem is read-only and ephemeral, so farm image
+uploads must go to object storage instead of `public/uploads`. The app uses
+**Vercel Blob** for this and falls back to the local filesystem automatically
+when no Blob token is present (for example on your laptop or in tests).
+
+1. In the Vercel project, open **Storage** then **Create** and choose **Blob**.
+2. Create the Blob store and connect it to this project. Vercel then adds the
+   `BLOB_READ_WRITE_TOKEN` environment variable to the project automatically, so
+   you normally do **not** set it by hand. (If you ever need to, paste the token
+   into **Settings → Environment Variables** as `BLOB_READ_WRITE_TOKEN`.)
+3. Redeploy so the new variable is picked up.
+
+With the token present, uploads are stored as Blob objects and the database
+keeps the returned `https://<id>.public.blob.vercel-storage.com/...` URL. The
+token is a secret: it is read only from the environment and is never logged or
+sent to the browser. With no token (local/offline), uploads write to
+`public/uploads` exactly as before.
+
+**Approval still applies.** Switching storage to Blob does **not** change the
+approval model: a `farm_manager`'s uploaded media is still **submitted for
+review** and only becomes public after a `platform_admin` approves it (governed
+by `MEDIA_REQUIRES_APPROVAL`). AI never approves or publishes media.
+
+### (Optional) Enable the free Google Gemini AI provider
+
+The app runs end-to-end on the deterministic mock with no key, so this step is
+**optional**. To switch to the free Google Gemini tier (model
+`gemini-1.5-flash`):
+
+1. Create a free Google AI Studio API key at
+   [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+2. In the Vercel project, open **Settings → Environment Variables** and add
+   `GEMINI_API_KEY` with your key as the value. **Never paste the key into the
+   chat, the code, or a committed file** — it is read only from the environment.
+3. Set `AI_PROVIDER` to `gemini` (replacing the `mock` value from the env table
+   above).
+4. Redeploy so the variables are picked up.
+
+With a key present and `AI_PROVIDER=gemini`, the per-use-case feature flags
+decide which assistants call Gemini; anything still flagged off falls back to the
+mock. With no key, everything stays on the mock. The key value is never logged or
+sent to the browser; the Settings page shows only whether a key is present. A
+leaked key is considered compromised — rotate it in Google AI Studio and update
+the Vercel variable.
+
 ---
 
 ## Step 4. Deploy

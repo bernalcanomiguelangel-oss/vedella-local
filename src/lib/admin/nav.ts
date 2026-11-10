@@ -36,6 +36,7 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   { key: "metrics", href: "/admin/metrics", visibility: "admin" },
   { key: "farms", href: "/admin/farms", visibility: "admin" },
   { key: "products", href: "/admin/products", visibility: "admin" },
+  { key: "copy", href: "/admin/copy", visibility: "admin" },
   { key: "lots", href: "/admin/lots", visibility: "admin" },
   { key: "cycles", href: "/admin/cycles", visibility: "admin" },
   { key: "orders", href: "/admin/orders", visibility: "admin" },

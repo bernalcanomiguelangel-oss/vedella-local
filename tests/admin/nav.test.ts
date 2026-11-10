@@ -21,13 +21,14 @@ import en from "../../src/lib/i18n/en.json";
 const PLATFORM_ONLY = ["websiteText", "users", "settings"];
 
 describe("ADMIN_NAV_ITEMS", () => {
-  it("defines exactly the 14 sections from the IA doc, in order", () => {
-    expect(ADMIN_NAV_ITEMS).toHaveLength(14);
+  it("defines the 14 IA-doc sections plus the Copy A/B surface, in order", () => {
+    expect(ADMIN_NAV_ITEMS).toHaveLength(15);
     expect(ADMIN_NAV_KEYS).toEqual([
       "overview",
       "metrics",
       "farms",
       "products",
+      "copy",
       "lots",
       "cycles",
       "orders",
@@ -43,9 +44,9 @@ describe("ADMIN_NAV_ITEMS", () => {
 });
 
 describe("navItemsForRole", () => {
-  it("platform_admin sees all 14 items", () => {
+  it("platform_admin sees all items", () => {
     const items = navItemsForRole("platform_admin");
-    expect(items).toHaveLength(14);
+    expect(items).toHaveLength(15);
     expect(items.map((i) => i.key)).toEqual(ADMIN_NAV_KEYS);
   });
 

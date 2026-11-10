@@ -58,7 +58,9 @@ npm run dev
 > zero setup.
 
 The app runs end-to-end with **no API key**. A real AI provider is only used when
-`AI_API_KEY` is set *and* the relevant feature flag is enabled.
+a key (`AI_API_KEY` or `GEMINI_API_KEY`) is set *and* the relevant feature flag is
+enabled. The easiest real option is the **free** Google Gemini `gemini-1.5-flash`
+model (`AI_PROVIDER="gemini"` + `GEMINI_API_KEY`).
 
 > **Migrations are authoritative.** Schema changes ship as committed SQL under
 > `prisma/migrations/` (applied with `migrate deploy` / `migrate reset`), not
@@ -71,13 +73,16 @@ The app runs end-to-end with **no API key**. A real AI provider is only used whe
 
 ### Where a real AI provider key goes
 
-Paste a real key **only** into the git-ignored `.env` as `AI_API_KEY`, set
-`AI_PROVIDER` to the real provider name, and turn on the specific feature flag(s)
-you want (see the table below). The admin **Settings** page and each in-panel
-assistant show this as a **presence-only** indicator (`hasApiKey=true/false` and
-the env-var name `AI_API_KEY`) — the key value is never read into the browser,
-logged, or stored in the database. With `AI_API_KEY` empty, everything falls back
-to the deterministic **MockAiProvider** so the demo runs fully offline with zero
+Paste a real key **only** into the git-ignored `.env` (locally) or the Vercel
+project environment variables — never into the chat or the code. For the free
+Gemini option, put the key in `GEMINI_API_KEY` and set `AI_PROVIDER="gemini"`; for
+an OpenAI-compatible endpoint use `AI_API_KEY` and `AI_PROVIDER="openai"`. Then
+turn on the specific feature flag(s) you want (see the table below). The admin
+**Settings** page and each in-panel assistant show this as a **presence-only**
+indicator (`hasApiKey=true/false` and the accepted env-var names
+`AI_API_KEY or GEMINI_API_KEY`) — the key value is never read into the browser,
+logged, or stored in the database. With both keys empty, everything falls back to
+the deterministic **MockAiProvider** so the demo runs fully offline with zero
 configuration.
 
 ## Authentication & passwords
@@ -130,19 +135,39 @@ small-sample caveat.
 
 ## Image uploads
 
-Farms illustrate their catalogue with real photos. Uploads are handled entirely
-on the local filesystem, with no cloud storage and no external services.
+Farms illustrate their catalogue with real photos. Uploads go through a small
+storage seam (`src/lib/media-storage.ts`) with two backends, selected at
+runtime, so the same code path works locally and on Vercel.
 
 **Who can upload.** A `farm_manager` uploads images for their **own** product
 offers and for their **own** farm profile (hero image plus gallery). A
 `platform_admin` may manage media for **any** farm. Farm-to-farm isolation is
 enforced server-side, the same way the rest of the admin area is.
 
-**Where files live.** Uploads are **real local files** written to the
-git-ignored uploads directory `public/uploads` (see `.gitignore`), served as
-static assets. The database stores **only** the relative path and metadata
-(for example `/uploads/<random>.jpg`), never the image bytes. The directory is
-created on demand, so the app works offline with zero configuration.
+**Where files live (two backends).** The backend is chosen by the presence of
+the `BLOB_READ_WRITE_TOKEN` environment variable:
+
+- **Local / offline (no token).** Uploads are **real local files** written to the
+  git-ignored uploads directory `public/uploads` (see `.gitignore`), served as
+  static assets. The DB stores **only** the relative path (for example
+  `/uploads/<random>.jpg`). The directory is created on demand, so the app works
+  offline with zero configuration. This is also what the tests use.
+- **Production on Vercel (token set).** The serverless filesystem is
+  read-only/ephemeral, so writes go to **Vercel Blob** instead. The
+  `@vercel/blob` package is imported **lazily** only when a token is present, and
+  the DB stores the returned `https://<id>.public.blob.vercel-storage.com/...`
+  URL. The token is read only from the environment and is never logged. See
+  `docs/deploy-vercel-neon.md` for how to enable the Blob store.
+
+In both cases the stored ref is the only thing persisted (never the image
+bytes), and only `/uploads/...` paths and `*.blob.vercel-storage.com` https URLs
+are ever rendered on the public marketplace (`isPublicImageRef` in
+`src/lib/image-display.ts`); any other host or scheme falls back to the gradient.
+
+**Failing safely.** If storage is unavailable (for example the Vercel FS rejects
+the write, or Blob errors), the upload action catches the error, best-effort
+cleans up any partial object, and returns a friendly, handled message to the
+admin/farm UI. It never throws an unhandled error that would crash the page.
 
 **Untrusted-file handling.** Every upload is treated as untrusted
 (`src/lib/media.ts`):
@@ -271,8 +296,13 @@ The AI layer is **server-side only** and goes through a single provider boundary
 (`AiProvider`). Two implementations exist:
 
 - **MockAiProvider** — deterministic, offline, zero-config. This is the default.
-- A real, OpenAI-compatible provider — imported **lazily** and constructed **only**
-  when `AI_API_KEY` is present *and* the relevant feature flag is on.
+- A real provider — imported **lazily** and constructed **only** when a key is
+  present *and* the relevant feature flag is on. Two real implementations ship:
+  - **Google Gemini** (`AI_PROVIDER="gemini"`) — the **free** `gemini-1.5-flash`
+    model via the Generative Language REST API. Paste a free key into
+    `GEMINI_API_KEY` (or `AI_API_KEY` as a fallback).
+  - **OpenAI-compatible** (`AI_PROVIDER="openai"`) — any OpenAI-style endpoint,
+    using `AI_API_KEY` (+ optional `AI_MODEL` / `AI_BASE_URL`).
 
 Three use cases, each with a safe mock fallback and a Zod-validated, audited output:
 
@@ -288,15 +318,26 @@ Three use cases, each with a safe mock fallback and a Zod-validated, audited out
 3. **Receipt ingestion** — upload an image/PDF; the AI extracts structured lot/product
    fields to **pre-fill a human review form**. It creates no records and approves
    nothing; a human enters the price and submits to create a `pending_review` record.
+4. **Copy A/B + LLM-as-judge** — the AI proposes alternative **product
+   descriptions** and an LLM-as-judge scores them `PASS`/`FAIL` with a reason,
+   using human-authored rules plus the **accumulated examples** of past human
+   decisions. A human accepts/edits/rejects each variant **with a required
+   reason** (publish is `platform_admin`-only); running experiments are measured
+   with the existing anonymous analytics, reported as raw counts with named
+   numerator/denominator, an explicit small-sample caveat, and a judge-vs-human
+   agreement split (never one collapsed accuracy number). **Learning is
+   accumulated examples, not model training.** See the admin **Copy A/B** surface
+   (`/admin/copy`) and [`docs/ab-testing-judge.md`](docs/ab-testing-judge.md).
 
 ### Feature flags
 
 Per-use-case flags gate the real provider (the mock is always available as a fallback):
 
-| Variable                  | Purpose                                  |
-| ------------------------- | ---------------------------------------- |
-| `AI_PROVIDER`             | `mock` (default) or a real provider name |
-| `AI_API_KEY`              | Real provider key (empty ⇒ mock only)    |
+| Variable                  | Purpose                                             |
+| ------------------------- | --------------------------------------------------- |
+| `AI_PROVIDER`             | `mock` (default), `gemini`, or `openai`             |
+| `GEMINI_API_KEY`          | Free Gemini key (preferred for `gemini`; empty ⇒ mock) |
+| `AI_API_KEY`              | OpenAI key / fallback Gemini key (empty ⇒ mock only) |
 | `AI_TRANSLATION_ENABLED`  | Enable the real translation provider     |
 | `AI_METRICS_ENABLED`      | Enable the real metrics provider         |
 | `AI_RECEIPT_ENABLED`      | Enable the real receipt provider         |
@@ -315,6 +356,27 @@ create traceability.
 | `AI_TRACEABILITY_REVIEW_ENABLED`   | Traceability review helper              |
 | `AI_METRICS_ANALYST_ENABLED`       | Metrics analyst headline                |
 | `AI_CYCLE_RECOMMENDATION_ENABLED`  | Cycle recommendation                    |
+
+The **A/B-testing copy loop** (FEAT-004) has its own flag so it can be switched
+on/off independently and its `AiRun` audit rows are labelled honestly (use case
+`copyAbTesting`):
+
+| Variable                       | A/B copy loop                                     |
+| ------------------------------ | ------------------------------------------------- |
+| `AI_COPY_AB_TESTING_ENABLED`   | AI proposer + LLM-as-judge for product copy       |
+
+The proposer only **drafts** `draft` variants and the judge only **scores** them
+PASS/FAIL/UNKNOWN; a human always decides, approves and publishes. The AI never
+sets a price, approves/publishes, or flips status.
+
+> **Receipt extraction is text-only on the real providers.** Both the Gemini and
+> OpenAI `extractReceipt` paths send the pre-OCR'd `text` field (wrapped as
+> untrusted data) to a JSON model; they do **not** run OCR or send raw image/PDF
+> bytes to a vision model. With only binary bytes and no `text`, the model
+> receives a `[binary ... upload]` placeholder and returns little of use, so a
+> real image/PDF receipt needs OCR text supplied upstream. This is acceptable
+> because extraction only **pre-fills a human-review form** and never creates or
+> approves any traceability record.
 
 When a flag is off, the key is missing, or the model is unavailable, the layer falls
 back to the mock / a no-op and never crashes.

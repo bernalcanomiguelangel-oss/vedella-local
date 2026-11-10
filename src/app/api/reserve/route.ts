@@ -11,6 +11,7 @@ import { reserve } from "@/lib/reserve";
 import { reserveRateLimiter, clientKeyFromRequest } from "@/lib/rateLimit";
 import { getOrCreateAnonSession } from "@/lib/analytics-session";
 import { recordEvent } from "@/lib/analytics";
+import { resolveConversionVariants } from "@/lib/ab-serving";
 
 const BodySchema = z.object({
   items: z
@@ -95,5 +96,27 @@ export async function POST(request: Request) {
     type: "reservation_completed",
     anonSessionId: session.id,
   });
+
+  // A/B conversion attribution (FEAT-005): credit any copy variant this session
+  // was SHOWN for a reserved offer with a `copy_variant_converted` event. Only
+  // offers the session was actually impressed on are credited (no conversion
+  // without a prior impression). Best-effort — never blocks the reservation.
+  try {
+    const reservedOfferIds = parsed.data.items.map((i) => i.productId);
+    const conversions = await resolveConversionVariants(prisma, {
+      offerIds: reservedOfferIds,
+      anonSessionId: session.id,
+    });
+    for (const c of conversions) {
+      await recordEvent(prisma, {
+        type: "copy_variant_converted",
+        anonSessionId: session.id,
+        offerId: c.offerId,
+        copyVariantId: c.copyVariantId,
+      });
+    }
+  } catch {
+    // Attribution is best-effort; a failure never breaks the reservation.
+  }
   return NextResponse.json(outcome, { status: 201 });
 }

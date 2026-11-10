@@ -23,6 +23,8 @@ import type {
   TraceabilityReview,
   MetricsAnalyst,
   CycleRecommendation,
+  CopyProposal,
+  JudgeVerdict,
 } from "./schemas";
 
 /**
@@ -41,6 +43,10 @@ export type AiUseCase =
   | "translate"
   | "metrics"
   | "receipt"
+  // A/B-testing copy proposer + LLM-as-judge (FEAT-004). Its own flag so the
+  // loop has an independent on/off switch and its AiRun audit rows are labelled
+  // honestly (not borrowed from another use case).
+  | "copyAbTesting"
   | AiAssistantUseCase;
 
 export const ASSISTANT_USE_CASES: AiAssistantUseCase[] = [
@@ -121,6 +127,59 @@ export interface TraceabilityFacts extends AssistantFacts {
   };
 }
 
+// ---------------------------------------------------------------------------
+// A/B-testing copy proposer + LLM-as-judge inputs (FEAT-004, blob/gemini task).
+//
+// The proposer is grounded ONLY in server-resolved structured `facts`; it never
+// receives (or invents) a price it may set. `humanExamples` are accumulated
+// HumanDecisionExample few-shots (real past human decisions) injected into the
+// prompt — this is the "learning" substrate: ACCUMULATED EXAMPLES, not model
+// training. Any untrusted example/variant text is fenced as DATA (sanitize.ts)
+// before a model sees it.
+// ---------------------------------------------------------------------------
+
+/** A single accumulated human decision replayed as an in-context example. */
+export interface CopyDecisionExample {
+  /** Snapshot of the structured facts the decision was about. */
+  offerContext: string;
+  /** The variant text the human decided on (UNTRUSTED — fenced as data). */
+  variantText: string;
+  /** approve | reject | edit. */
+  verdict: string;
+  /** The human's reason (UNTRUSTED — fenced as data). */
+  reason: string;
+  /** The edited text, when the human edited the variant (else null). */
+  editedText: string | null;
+}
+
+export interface ProposeCopyInput {
+  /** Server-resolved, trusted structured facts for the offer. */
+  facts: Record<string, string | number | null>;
+  /** Target locale (ca | es | en). */
+  locale: Locale;
+  /** How many alternative descriptions to draft. */
+  count: number;
+  /** Non-sensitive audit reference, e.g. "offer:123:ca". */
+  inputRef: string;
+  /** Accumulated human-decision few-shots (may be empty). UNTRUSTED text. */
+  humanExamples: CopyDecisionExample[];
+}
+
+export interface JudgeCopyInput {
+  /** The candidate description to score. UNTRUSTED — fenced as data. */
+  variantText: string;
+  /** Target locale. */
+  locale: Locale;
+  /** Server-resolved, trusted structured facts the variant must stay grounded in. */
+  facts: Record<string, string | number | null>;
+  /** Human-authored PASS/FAIL criteria. Trusted (still fenced defensively). */
+  rules: string[];
+  /** Accumulated human-decision few-shots (may be empty). UNTRUSTED text. */
+  humanExamples: CopyDecisionExample[];
+  /** Non-sensitive audit reference. */
+  inputRef: string;
+}
+
 /** The provider-agnostic AI boundary. Implementations must be side-effect free
  * with respect to application state (no DB writes, no approvals, no pricing). */
 export interface AiProvider {
@@ -138,6 +197,13 @@ export interface AiProvider {
   reviewTraceability(input: TraceabilityFacts): Promise<TraceabilityReview>;
   analyzeMetrics(input: MetricsInput): Promise<MetricsAnalyst>;
   recommendCycle(input: AssistantFacts): Promise<CycleRecommendation>;
+
+  // A/B-testing copy loop (FEAT-004). proposeCopy DRAFTS alternative product
+  // descriptions grounded ONLY in the provided facts; judgeCopy scores a variant
+  // PASS/FAIL/UNKNOWN. Neither ever sets a price/approval/status — the services
+  // guardrail-filter the output and a human decides everything downstream.
+  proposeCopy(input: ProposeCopyInput): Promise<CopyProposal>;
+  judgeCopy(input: JudgeCopyInput): Promise<JudgeVerdict>;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +225,8 @@ export interface AiConfig {
     traceabilityReview: boolean;
     metricsAnalyst: boolean;
     cycleRecommendation: boolean;
+    // A/B-testing copy proposer + LLM-as-judge (FEAT-004).
+    copyAbTesting: boolean;
   };
 }
 
@@ -173,8 +241,13 @@ function envFlag(value: string | undefined): boolean {
  * path. Keys are read for real only inside the real provider.
  */
 export function readAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
-  const rawKey = env.AI_API_KEY;
-  const hasApiKey = typeof rawKey === "string" && rawKey.trim().length > 0;
+  // AI_PROVIDER accepts "mock" (default, zero-config offline), "gemini" (free
+  // gemini-1.5-flash), or "openai" (any OpenAI-compatible endpoint).
+  // A key present under EITHER accepted name counts as present. We only ever
+  // expose the boolean — never the value — through this path.
+  const hasAnyKey = (value: string | undefined): boolean =>
+    typeof value === "string" && value.trim().length > 0;
+  const hasApiKey = hasAnyKey(env.AI_API_KEY) || hasAnyKey(env.GEMINI_API_KEY);
   return {
     provider: (env.AI_PROVIDER ?? "mock").trim().toLowerCase(),
     hasApiKey,
@@ -187,6 +260,7 @@ export function readAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
       traceabilityReview: envFlag(env.AI_TRACEABILITY_REVIEW_ENABLED),
       metricsAnalyst: envFlag(env.AI_METRICS_ANALYST_ENABLED),
       cycleRecommendation: envFlag(env.AI_CYCLE_RECOMMENDATION_ENABLED),
+      copyAbTesting: envFlag(env.AI_COPY_AB_TESTING_ENABLED),
     },
   };
 }
@@ -210,6 +284,8 @@ export function flagForUseCase(config: AiConfig, useCase: AiUseCase): boolean {
       return config.flags.metricsAnalyst;
     case "cycleRecommendation":
       return config.flags.cycleRecommendation;
+    case "copyAbTesting":
+      return config.flags.copyAbTesting;
   }
 }
 
@@ -267,8 +343,19 @@ export async function getAiProvider(
 
   if (shouldUseRealProvider(config, useCase)) {
     try {
-      const { createRealProvider } = await import("./openai-provider");
-      const provider = createRealProvider(env);
+      // Branch on the configured provider. The chosen module is imported LAZILY
+      // and ONLY here, so with no key (shouldUseRealProvider false) neither real
+      // provider module is ever loaded. Any construction error (e.g. a missing
+      // key under a different name) falls through to the mock below.
+      let provider: AiProvider;
+      if (config.provider === "gemini") {
+        const { createGeminiProvider } = await import("./gemini-provider");
+        provider = createGeminiProvider(env);
+      } else {
+        // "openai" or any other non-mock value uses the OpenAI-compatible path.
+        const { createRealProvider } = await import("./openai-provider");
+        provider = createRealProvider(env);
+      }
       return { provider, isReal: true, flagEnabled };
     } catch (err) {
       console.error(

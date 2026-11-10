@@ -115,6 +115,8 @@ model Farm {
   cycleParticipations CycleFarm[]
   cycleOfferAvailability CycleOfferAvailability[]
   fulfilmentGroups FulfilmentGroup[]
+  copyVariants CopyVariant[]
+  copyExperiments CopyExperiment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -285,6 +287,8 @@ model FarmProductOffer {
   packItems PackItemV2[]
   orderItems OrderItem[]
   cycleOfferAvailability CycleOfferAvailability[]
+  copyVariants CopyVariant[]
+  copyExperiments CopyExperiment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -701,6 +705,9 @@ model AnalyticsEvent {
   // Closed channel set (analytics-dictionary §5); 'unknown' when undetermined.
   channel       String?
   campaign      String?
+  // A/B copy testing (FEAT-005): the approved CopyVariant the session was shown
+  // / converted on. An id only — never any variant text or PII. Null otherwise.
+  copyVariantId String?
   isTest        Boolean  @default(false)
   createdAt     DateTime @default(now())
 
@@ -708,6 +715,7 @@ model AnalyticsEvent {
   @@index([anonSessionId])
   @@index([farmId])
   @@index([createdAt])
+  @@index([copyVariantId])
   // M7 grouping dimensions for the admin dashboards.
   @@index([offerId])
   @@index([definitionId])
@@ -854,4 +862,108 @@ model MarketPriceSnapshot {
   createdAt     DateTime @default(now())
 
   @@unique([cutName, weekStart])
+}
+
+// ---------------------------------------------------------------------------
+// AI-assisted A/B testing + LLM-as-judge learning loop for PRODUCT
+// DESCRIPTIONS (FEAT-004). Mirror of schema.prisma — see that file for the full
+// doc comment. Learning is by ACCUMULATED HumanDecisionExample few-shots
+// injected into the proposer + judge prompts, NOT by model training.
+// ---------------------------------------------------------------------------
+
+model CopyVariant {
+  id                 String            @id @default(cuid())
+  offer              FarmProductOffer  @relation(fields: [farmProductOfferId], references: [id])
+  farmProductOfferId String
+  farm               Farm              @relation(fields: [farmId], references: [id])
+  farmId             String
+  locale             String
+  text               String
+  source             String            @default("ai")
+  status             String            @default("draft")
+  evidenceJson       String            @default("[]")
+  aiRunId            String?
+  createdByUserId    String?
+
+  evaluations        JudgeEvaluation[]
+  experimentsAsA     CopyExperiment[]  @relation("ExperimentVariantA")
+  experimentsAsB     CopyExperiment[]  @relation("ExperimentVariantB")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmProductOfferId])
+  @@index([farmId])
+  @@index([status])
+}
+
+model CopyExperiment {
+  id                 String   @id @default(cuid())
+  offer              FarmProductOffer @relation(fields: [farmProductOfferId], references: [id])
+  farmProductOfferId String
+  farm               Farm     @relation(fields: [farmId], references: [id])
+  farmId             String
+  locale             String
+  status             String   @default("running")
+  variantA           CopyVariant @relation("ExperimentVariantA", fields: [variantAId], references: [id])
+  variantAId         String
+  variantB           CopyVariant @relation("ExperimentVariantB", fields: [variantBId], references: [id])
+  variantBId         String
+  startedAt          DateTime @default(now())
+  endedAt            DateTime?
+  decidedVariantId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+  @@index([farmProductOfferId])
+}
+
+model JudgeRule {
+  id              String   @id @default(cuid())
+  farmId          String?
+  locale          String?
+  ruleText        String
+  isActive        Boolean  @default(true)
+  createdByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+}
+
+model JudgeEvaluation {
+  id            String      @id @default(cuid())
+  copyVariant   CopyVariant @relation(fields: [copyVariantId], references: [id])
+  copyVariantId String
+  verdict       String
+  reason        String      @default("")
+  promptVersion String      @default("")
+  model         String      @default("")
+  aiRunId       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([copyVariantId])
+}
+
+model HumanDecisionExample {
+  id             String  @id @default(cuid())
+  farmId         String?
+  locale         String?
+  copyVariantId  String?
+  offerContext   String  @default("")
+  variantText    String
+  verdict        String
+  reason         String
+  editedText     String?
+  decidedByUserId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([farmId])
+  @@index([locale])
+  @@index([copyVariantId])
 }

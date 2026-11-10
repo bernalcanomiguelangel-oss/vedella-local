@@ -38,7 +38,8 @@ describe("buildAiDiagnostics presence-only", () => {
 
     expect(diag.hasApiKey).toBe(true);
     expect(diag.flags.translation).toBe(true);
-    expect(diag.keyEnvVar).toBe("AI_API_KEY");
+    // The label now communicates BOTH accepted env-var names (presence-only).
+    expect(diag.keyEnvVar).toBe("AI_API_KEY o GEMINI_API_KEY");
 
     // The full serialised diagnostics must not contain the key value anywhere.
     const serialised = JSON.stringify(diag);
@@ -47,6 +48,17 @@ describe("buildAiDiagnostics presence-only", () => {
     expect(Object.values(diag).some((v) => typeof v === "string" && v.includes(FAKE_KEY))).toBe(
       false,
     );
+  });
+
+  it("reports hasApiKey=true when only GEMINI_API_KEY is present, never leaking it", () => {
+    const diag = buildAiDiagnostics({
+      GEMINI_API_KEY: FAKE_KEY,
+      AI_PROVIDER: "gemini",
+      AI_TRANSLATION_ENABLED: "true",
+    } as unknown as NodeJS.ProcessEnv);
+    expect(diag.hasApiKey).toBe(true);
+    expect(diag.provider).toBe("gemini");
+    expect(JSON.stringify(diag)).not.toContain(FAKE_KEY);
   });
 
   it("reports hasApiKey=false in mock mode", () => {
