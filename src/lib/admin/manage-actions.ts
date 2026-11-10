@@ -40,12 +40,8 @@ import {
   applyCycleAddFarm,
   applyCycleRemoveFarm,
 } from "./manage";
-import {
-  MEDIA_REQUIRES_APPROVAL,
-  validateImageUpload,
-  writeImageFile,
-  deleteImageFile,
-} from "@/lib/media";
+import { MEDIA_REQUIRES_APPROVAL, validateImageUpload } from "@/lib/media";
+import { selectMediaStorage } from "@/lib/media-storage";
 
 export interface ActionResult {
   ok: boolean;
@@ -281,11 +277,19 @@ async function resolveMediaFarmId(
  * Upload a farm image for an offer or the farm profile (hero/gallery). Re-auths
  * on the server, resolves and farm-scopes the target (a farm_manager may ONLY
  * upload to their own farm), validates the UNTRUSTED file by extension + magic
- * bytes + size, writes it to the git-ignored uploads dir, and stores the path
- * to the pending* field (or public field when MEDIA_REQUIRES_APPROVAL is off).
+ * bytes + size, persists it through the selected MediaStorage (local filesystem
+ * offline; Vercel Blob when BLOB_READ_WRITE_TOKEN is set) and stores the RETURNED
+ * public ref (a "/uploads/..." path OR a blob https URL) to the pending* field
+ * (or public field when MEDIA_REQUIRES_APPROVAL is off).
  *
  * `fileData` carries the raw bytes (base64) + original filename; we never trust
  * the client Content-Type and never log file contents.
+ *
+ * FAIL GRACEFULLY: the storage write AND the DB apply are both inside try/catch.
+ * On ANY storage or DB error we best-effort remove the just-stored object and
+ * return a structured { ok:false, code:'STORAGE_ERROR', message } to the UI. We
+ * NEVER rethrow, because an unhandled throw here crashed the admin/farm page on
+ * Vercel (the exact user-reported bug when the serverless FS rejected the write).
  */
 export async function mediaUploadAction(args: {
   target: MediaTarget;
@@ -296,8 +300,8 @@ export async function mediaUploadAction(args: {
   const user = await requireAdmin();
   const { target, targetId } = args;
 
-  // Farm scope BEFORE touching the filesystem: a farm_manager can only upload to
-  // their own farm; platform_admin to any.
+  // Farm scope BEFORE touching storage: a farm_manager can only upload to their
+  // own farm; platform_admin to any.
   const farmId = await resolveMediaFarmId(target, targetId);
   if (!farmId) {
     return { ok: false, code: "NOT_FOUND", message: "Target not found." };
@@ -320,23 +324,41 @@ export async function mediaUploadAction(args: {
   const requiresApproval =
     actor.role === "platform_admin" ? false : MEDIA_REQUIRES_APPROVAL;
 
-  // Bytes are written BEFORE the DB apply, so if the apply fails (e.g. the
-  // target was deleted between the scope resolve and the apply -> NOT_FOUND) or
-  // throws, the file would be orphaned with nothing referencing it. Delete it
-  // on any non-success so the git-ignored uploads dir never accumulates garbage.
-  await writeImageFile(validated.storedFilename, buf);
+  // Pick the storage backend from the environment (Vercel Blob when
+  // BLOB_READ_WRITE_TOKEN is set, else the local filesystem). The returned ref
+  // is stored verbatim; it may be a "/uploads/..." path OR a blob https URL.
+  const storage = selectMediaStorage();
+
+  // The object is persisted BEFORE the DB apply, so if the apply fails (e.g. the
+  // target was deleted between the scope resolve and the apply -> NOT_FOUND) the
+  // stored object would be orphaned with nothing referencing it. Remove it on
+  // any non-success. BOTH the storage write and the DB apply are wrapped so a
+  // read-only/ephemeral FS (Vercel) or a DB error becomes a handled result,
+  // NEVER an unhandled throw that crashes the page.
+  let storedRef: string | null = null;
   let res: ActionResult & { pending?: boolean };
   try {
+    storedRef = await storage.put(validated.storedFilename, buf, validated.kind);
     res = await applyMediaUpload(prisma, actor, {
       target,
       targetId,
-      storedPath: validated.storedPath,
+      storedPath: storedRef,
       requiresApproval,
     });
-  } catch (err) {
-    await deleteImageFile(validated.storedFilename);
-    throw err;
+  } catch {
+    // Best-effort cleanup of whatever we managed to store, then a friendly,
+    // handled error. We deliberately do NOT include the thrown error text (it
+    // may reference a token/path) and never rethrow.
+    if (storedRef) {
+      await storage.remove(storedRef).catch(() => {});
+    }
+    return {
+      ok: false,
+      code: "STORAGE_ERROR",
+      message: "No s'ha pogut desar la imatge. Torna-ho a provar.",
+    };
   }
+
   if (res.ok) {
     await recordAdminAudit({
       actor: user,
@@ -344,15 +366,15 @@ export async function mediaUploadAction(args: {
       entityType: target,
       entityId: targetId,
       toState: requiresApproval ? "pending_review" : undefined,
-      // Path only; NEVER the file contents.
-      detail: `media ${target} path ${validated.storedPath}`,
+      // Ref only; NEVER the file contents.
+      detail: `media ${target} ref ${storedRef}`,
     });
     revalidateAll();
-    return { ...res, storedPath: validated.storedPath };
+    return { ...res, storedPath: storedRef };
   }
   // DB apply reported a failure (NOT_FOUND / FORBIDDEN / BAD_PATH): remove the
-  // just-written orphan before returning the error.
-  await deleteImageFile(validated.storedFilename);
+  // just-stored orphan before returning the error.
+  await storage.remove(storedRef).catch(() => {});
   return res;
 }
 

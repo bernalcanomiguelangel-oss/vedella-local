@@ -89,6 +89,31 @@ Notes:
 - Apply the variables to the **Production** environment (adding them to Preview and
   Development too is fine).
 
+### Enable Vercel Blob for farm image uploads
+
+On Vercel the serverless filesystem is read-only and ephemeral, so farm image
+uploads must go to object storage instead of `public/uploads`. The app uses
+**Vercel Blob** for this and falls back to the local filesystem automatically
+when no Blob token is present (for example on your laptop or in tests).
+
+1. In the Vercel project, open **Storage** then **Create** and choose **Blob**.
+2. Create the Blob store and connect it to this project. Vercel then adds the
+   `BLOB_READ_WRITE_TOKEN` environment variable to the project automatically, so
+   you normally do **not** set it by hand. (If you ever need to, paste the token
+   into **Settings → Environment Variables** as `BLOB_READ_WRITE_TOKEN`.)
+3. Redeploy so the new variable is picked up.
+
+With the token present, uploads are stored as Blob objects and the database
+keeps the returned `https://<id>.public.blob.vercel-storage.com/...` URL. The
+token is a secret: it is read only from the environment and is never logged or
+sent to the browser. With no token (local/offline), uploads write to
+`public/uploads` exactly as before.
+
+**Approval still applies.** Switching storage to Blob does **not** change the
+approval model: a `farm_manager`'s uploaded media is still **submitted for
+review** and only becomes public after a `platform_admin` approves it (governed
+by `MEDIA_REQUIRES_APPROVAL`). AI never approves or publishes media.
+
 ---
 
 ## Step 4. Deploy

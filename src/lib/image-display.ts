@@ -14,23 +14,50 @@
  * testable. The UI uses the boolean to choose <img> vs the gradient placeholder.
  */
 
+/** Host suffix of Vercel Blob public URLs (e.g. <id>.public.blob.vercel-storage.com). */
+const VERCEL_BLOB_HOST_SUFFIX = ".blob.vercel-storage.com";
+
 /**
- * True when `ref` is a non-empty, local public upload path we are willing to
- * render as an <img src>. We only ever accept the app's own `/uploads/...`
- * static prefix: a relative, slash-rooted path with no scheme and no protocol.
- * This rejects null/empty values (seeded farms), remote URLs (offline safety),
- * and anything that is not our upload prefix, so the caller falls back to the
- * gradient placeholder in every other case.
+ * True when `ref` is a non-empty public image ref we are willing to render as an
+ * <img src>. Exactly TWO shapes are accepted and nothing else:
+ *
+ *   1. The app's own local `/uploads/...` static prefix (a relative, slash-rooted
+ *      path with no scheme), written by LocalFilesystemStorage in local/offline.
+ *   2. An `https://` URL whose host ends with `.blob.vercel-storage.com`, i.e. a
+ *      Vercel Blob public URL returned by VercelBlobStorage in production.
+ *
+ * Everything else is rejected: null/empty values (seeded farms), arbitrary
+ * remote hosts, non-https schemes (http/data/javascript/...), and
+ * protocol-relative `//host` URLs. This keeps the "no arbitrary remote" guarantee
+ * so the caller falls back to the gradient placeholder in every other case.
  */
 export function isPublicImageRef(ref: string | null | undefined): ref is string {
   if (typeof ref !== "string") return false;
   const trimmed = ref.trim();
   if (trimmed.length === 0) return false;
-  // Reject absolute/remote URLs and protocol-relative URLs; offline-only.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return false;
+  // Protocol-relative URLs (//host/...) are never allowed.
   if (trimmed.startsWith("//")) return false;
-  // Only the app's own uploads prefix is served as a local static asset.
-  return trimmed.startsWith("/uploads/");
+
+  // The app's own uploads prefix: a local static asset with no scheme.
+  if (trimmed.startsWith("/uploads/")) return true;
+
+  // Vercel Blob public URL: must be https AND on the blob host. We parse the URL
+  // (rather than string-matching) so a crafted value like
+  // "https://evil.com/.blob.vercel-storage.com" or
+  // "https://x.blob.vercel-storage.com.evil.com" cannot sneak through.
+  if (/^https:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      if (url.protocol !== "https:") return false;
+      const host = url.hostname.toLowerCase();
+      return host === VERCEL_BLOB_HOST_SUFFIX.slice(1) || host.endsWith(VERCEL_BLOB_HOST_SUFFIX);
+    } catch {
+      return false;
+    }
+  }
+
+  // Any other scheme (http:, data:, javascript:, etc.) or path is rejected.
+  return false;
 }
 
 /**

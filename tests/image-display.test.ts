@@ -24,11 +24,34 @@ describe("isPublicImageRef", () => {
     expect(isPublicImageRef("   ")).toBe(false);
   });
 
+  it("accepts an https Vercel Blob URL (production media path)", () => {
+    expect(
+      isPublicImageRef("https://abc123.public.blob.vercel-storage.com/photo.png"),
+    ).toBe(true);
+    expect(
+      isPublicImageRef("https://store.blob.vercel-storage.com/a/b/hero.webp"),
+    ).toBe(true);
+  });
+
   it("rejects remote/protocol URLs (offline-only safety)", () => {
     expect(isPublicImageRef("https://evil.example/x.jpg")).toBe(false);
     expect(isPublicImageRef("http://host/x.png")).toBe(false);
     expect(isPublicImageRef("//cdn.example/x.jpg")).toBe(false);
     expect(isPublicImageRef("data:image/png;base64,AAAA")).toBe(false);
+  });
+
+  it("rejects http:// Blob host and lookalike/suffix-spoof hosts", () => {
+    // Non-https Blob host must be rejected (only https is allowed).
+    expect(
+      isPublicImageRef("http://abc.public.blob.vercel-storage.com/x.png"),
+    ).toBe(false);
+    // Blob host as a path/subdomain of an attacker domain must not match.
+    expect(
+      isPublicImageRef("https://evil.com/.blob.vercel-storage.com/x.png"),
+    ).toBe(false);
+    expect(
+      isPublicImageRef("https://x.blob.vercel-storage.com.evil.com/x.png"),
+    ).toBe(false);
   });
 
   it("rejects paths outside the uploads prefix", () => {

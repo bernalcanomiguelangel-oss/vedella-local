@@ -130,19 +130,39 @@ small-sample caveat.
 
 ## Image uploads
 
-Farms illustrate their catalogue with real photos. Uploads are handled entirely
-on the local filesystem, with no cloud storage and no external services.
+Farms illustrate their catalogue with real photos. Uploads go through a small
+storage seam (`src/lib/media-storage.ts`) with two backends, selected at
+runtime, so the same code path works locally and on Vercel.
 
 **Who can upload.** A `farm_manager` uploads images for their **own** product
 offers and for their **own** farm profile (hero image plus gallery). A
 `platform_admin` may manage media for **any** farm. Farm-to-farm isolation is
 enforced server-side, the same way the rest of the admin area is.
 
-**Where files live.** Uploads are **real local files** written to the
-git-ignored uploads directory `public/uploads` (see `.gitignore`), served as
-static assets. The database stores **only** the relative path and metadata
-(for example `/uploads/<random>.jpg`), never the image bytes. The directory is
-created on demand, so the app works offline with zero configuration.
+**Where files live (two backends).** The backend is chosen by the presence of
+the `BLOB_READ_WRITE_TOKEN` environment variable:
+
+- **Local / offline (no token).** Uploads are **real local files** written to the
+  git-ignored uploads directory `public/uploads` (see `.gitignore`), served as
+  static assets. The DB stores **only** the relative path (for example
+  `/uploads/<random>.jpg`). The directory is created on demand, so the app works
+  offline with zero configuration. This is also what the tests use.
+- **Production on Vercel (token set).** The serverless filesystem is
+  read-only/ephemeral, so writes go to **Vercel Blob** instead. The
+  `@vercel/blob` package is imported **lazily** only when a token is present, and
+  the DB stores the returned `https://<id>.public.blob.vercel-storage.com/...`
+  URL. The token is read only from the environment and is never logged. See
+  `docs/deploy-vercel-neon.md` for how to enable the Blob store.
+
+In both cases the stored ref is the only thing persisted (never the image
+bytes), and only `/uploads/...` paths and `*.blob.vercel-storage.com` https URLs
+are ever rendered on the public marketplace (`isPublicImageRef` in
+`src/lib/image-display.ts`); any other host or scheme falls back to the gradient.
+
+**Failing safely.** If storage is unavailable (for example the Vercel FS rejects
+the write, or Blob errors), the upload action catches the error, best-effort
+cleans up any partial object, and returns a friendly, handled message to the
+admin/farm UI. It never throws an unhandled error that would crash the page.
 
 **Untrusted-file handling.** Every upload is treated as untrusted
 (`src/lib/media.ts`):
