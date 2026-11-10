@@ -58,7 +58,7 @@ export function CopyProposeControls({
         onClick={propose}
         disabled={pending}
         data-testid="copy-propose-run"
-        className="rounded-full bg-bark-700 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-bark-800 disabled:opacity-50"
+        className="rounded-full bg-bark-700 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-bark-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 disabled:opacity-50"
       >
         {pending ? "Generant…" : "Proposa variants (IA)"}
       </button>
@@ -68,7 +68,7 @@ export function CopyProposeControls({
           onClick={judgeAll}
           disabled={pending}
           data-testid="copy-judge-run"
-          className="rounded-full bg-bark-500 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-bark-600 disabled:opacity-50"
+          className="rounded-full bg-bark-500 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-bark-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 disabled:opacity-50"
         >
           Avalua amb el jutge (IA)
         </button>

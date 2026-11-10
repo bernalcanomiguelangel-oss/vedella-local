@@ -92,7 +92,7 @@ export function CopyVariantDecision({
           disabled={pending || !canApprove || status === "approved"}
           title={canApprove ? undefined : "Només un platform_admin pot aprovar."}
           data-testid="copy-approve"
-          className="rounded-full bg-olive-600 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-olive-700 disabled:opacity-50"
+          className="rounded-full bg-olive-600 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-olive-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 disabled:opacity-50"
         >
           Aprova
         </button>
@@ -107,7 +107,7 @@ export function CopyVariantDecision({
           }}
           disabled={pending}
           data-testid="copy-edit"
-          className="rounded-full bg-bark-600 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-bark-700 disabled:opacity-50"
+          className="rounded-full bg-bark-600 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-bark-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 disabled:opacity-50"
         >
           {showEdit ? "Desa l'edició" : "Edita"}
         </button>
@@ -116,7 +116,7 @@ export function CopyVariantDecision({
           onClick={() => decide("reject")}
           disabled={pending}
           data-testid="copy-reject"
-          className="rounded-full bg-beef-600 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-beef-700 disabled:opacity-50"
+          className="rounded-full bg-beef-600 px-3 py-1 text-xs font-semibold text-cream-50 hover:bg-beef-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 disabled:opacity-50"
         >
           Rebutja
         </button>
