@@ -4,6 +4,8 @@ import { CutCard, PackCard } from "@/components/ProductCard";
 import { getFarmCatalog } from "@/lib/catalog";
 import { getDictionary, resolveLocale } from "@/lib/i18n";
 import { startPageSession, emit } from "@/lib/analytics-session";
+import { prisma } from "@/lib/db";
+import { resolveActiveCopyForOffers } from "@/lib/ab-serving";
 import {
   isPublicImageRef,
   publicImageRefs,
@@ -33,6 +35,37 @@ export default async function FarmPage({
   // this farm. No PII is stored.
   const session = await startPageSession(searchParams, locale);
   await emit("farm_viewed", { farmId: farm.id, language: locale }, session);
+
+  // A/B copy serving (FEAT-005): when a running experiment pairs two APPROVED
+  // variants for one of this farm's cuts, deterministically assign THIS anon
+  // session to a variant, swap in the approved text, and record an impression.
+  // No running experiment -> the base description renders unchanged. Only the
+  // cut's own offer id is an experiment subject (offer-model cut ids == offer
+  // ids); legacy-only cuts simply have no experiments.
+  const abAssignments = await resolveActiveCopyForOffers(prisma, {
+    offerIds: farm.cuts.map((c) => c.id),
+    locale,
+    anonSessionId: session.id,
+  });
+  if (abAssignments.size > 0) {
+    for (const cut of farm.cuts) {
+      const assignment = abAssignments.get(cut.id);
+      if (!assignment) continue;
+      // Render the human-APPROVED variant text instead of the base description.
+      cut.description = assignment.text;
+      // Emit a privacy-safe impression (id only, no PII, no variant text).
+      await emit(
+        "copy_variant_impression",
+        {
+          farmId: farm.id,
+          offerId: cut.id,
+          language: locale,
+          copyVariantId: assignment.copyVariantId,
+        },
+        session,
+      );
+    }
+  }
 
   const productStrings = {
     weight: dict.product.weight,

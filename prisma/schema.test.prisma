@@ -705,6 +705,9 @@ model AnalyticsEvent {
   // Closed channel set (analytics-dictionary §5); 'unknown' when undetermined.
   channel       String?
   campaign      String?
+  // A/B copy testing (FEAT-005): the approved CopyVariant the session was shown
+  // / converted on. An id only — never any variant text or PII. Null otherwise.
+  copyVariantId String?
   isTest        Boolean  @default(false)
   createdAt     DateTime @default(now())
 
@@ -712,6 +715,7 @@ model AnalyticsEvent {
   @@index([anonSessionId])
   @@index([farmId])
   @@index([createdAt])
+  @@index([copyVariantId])
   // M7 grouping dimensions for the admin dashboards.
   @@index([offerId])
   @@index([definitionId])

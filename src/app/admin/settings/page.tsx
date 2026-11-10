@@ -87,6 +87,22 @@ export default async function AdminSettingsPage() {
             enganxis la clau al xat ni al codi; aquí només es mostra si hi és.
           </p>
 
+          <p
+            className="mt-2 rounded-lg bg-cream-50 p-3 text-xs text-bark-600"
+            data-testid="copy-ab-explainer"
+          >
+            <strong>Copy A/B (descripcions):</strong> l&apos;IA proposa
+            descripcions alternatives i un <strong>jutge (LLM-as-judge)</strong>{" "}
+            les puntua PASS/FAIL amb un motiu, seguint regles humanes i els{" "}
+            <strong>exemples acumulats</strong> de decisions humanes anteriors. Un
+            humà accepta, edita o rebutja amb un motiu obligatori (publicar és
+            només per a <code>platform_admin</code>). Es mesura amb l&apos;analítica
+            anònima existent amb avisos de mostra petita i sense afirmar
+            significació. L&apos;aprenentatge és per{" "}
+            <strong>acumulació d&apos;exemples</strong>, no per entrenament
+            d&apos;un model. Vegeu <code>docs/ab-testing-judge.md</code>.
+          </p>
+
           <h3 className="mt-4 font-semibold text-bark-800">
             On viu cada assistent d&apos;IA
           </h3>

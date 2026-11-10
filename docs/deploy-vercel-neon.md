@@ -114,6 +114,28 @@ approval model: a `farm_manager`'s uploaded media is still **submitted for
 review** and only becomes public after a `platform_admin` approves it (governed
 by `MEDIA_REQUIRES_APPROVAL`). AI never approves or publishes media.
 
+### (Optional) Enable the free Google Gemini AI provider
+
+The app runs end-to-end on the deterministic mock with no key, so this step is
+**optional**. To switch to the free Google Gemini tier (model
+`gemini-1.5-flash`):
+
+1. Create a free Google AI Studio API key at
+   [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+2. In the Vercel project, open **Settings → Environment Variables** and add
+   `GEMINI_API_KEY` with your key as the value. **Never paste the key into the
+   chat, the code, or a committed file** — it is read only from the environment.
+3. Set `AI_PROVIDER` to `gemini` (replacing the `mock` value from the env table
+   above).
+4. Redeploy so the variables are picked up.
+
+With a key present and `AI_PROVIDER=gemini`, the per-use-case feature flags
+decide which assistants call Gemini; anything still flagged off falls back to the
+mock. With no key, everything stays on the mock. The key value is never logged or
+sent to the browser; the Settings page shows only whether a key is present. A
+leaked key is considered compromised — rotate it in Google AI Studio and update
+the Vercel variable.
+
 ---
 
 ## Step 4. Deploy

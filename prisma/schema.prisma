@@ -702,6 +702,9 @@ model AnalyticsEvent {
   // Closed channel set (analytics-dictionary §5); 'unknown' when undetermined.
   channel       String?
   campaign      String?
+  // A/B copy testing (FEAT-005): the approved CopyVariant the session was shown
+  // / converted on. An id only — never any variant text or PII. Null otherwise.
+  copyVariantId String?
   isTest        Boolean  @default(false)
   createdAt     DateTime @default(now())
 
@@ -714,6 +717,8 @@ model AnalyticsEvent {
   @@index([definitionId])
   @@index([packId])
   @@index([cycleId])
+  // A/B copy-testing metric join dimension.
+  @@index([copyVariantId])
 }
 
 // First- and latest-touch channel attribution for an anonymous session, plus

@@ -38,6 +38,11 @@ export const ANALYTICS_EVENT_TYPES = [
   "next_cycle_interest_submitted",
   "language_selected",
   "delivery_mode_selected",
+  // A/B copy testing (blob/gemini task, FEAT-005): a visitor was SHOWN a
+  // specific approved CopyVariant, and (later) that same session converted on
+  // the offer they were shown. Both carry `copyVariantId`; neither holds PII.
+  "copy_variant_impression",
+  "copy_variant_converted",
 ] as const;
 
 export type AnalyticsEventType = (typeof ANALYTICS_EVENT_TYPES)[number];
@@ -95,6 +100,12 @@ export interface AnalyticsEventInput {
   deliveryMethod?: string | null;
   channel?: string | null;
   campaign?: string | null;
+  /**
+   * The approved CopyVariant the session was shown / converted on (A/B copy
+   * testing, FEAT-005). An id only — never any variant text or PII. Null on
+   * every non-A/B event.
+   */
+  copyVariantId?: string | null;
   isTest?: boolean;
 }
 
@@ -130,6 +141,7 @@ export async function recordEvent(
         deliveryMethod: input.deliveryMethod ?? null,
         channel,
         campaign: input.campaign ?? null,
+        copyVariantId: input.copyVariantId ?? null,
         isTest: input.isTest ?? false,
       },
     });

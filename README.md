@@ -318,6 +318,16 @@ Three use cases, each with a safe mock fallback and a Zod-validated, audited out
 3. **Receipt ingestion** — upload an image/PDF; the AI extracts structured lot/product
    fields to **pre-fill a human review form**. It creates no records and approves
    nothing; a human enters the price and submits to create a `pending_review` record.
+4. **Copy A/B + LLM-as-judge** — the AI proposes alternative **product
+   descriptions** and an LLM-as-judge scores them `PASS`/`FAIL` with a reason,
+   using human-authored rules plus the **accumulated examples** of past human
+   decisions. A human accepts/edits/rejects each variant **with a required
+   reason** (publish is `platform_admin`-only); running experiments are measured
+   with the existing anonymous analytics, reported as raw counts with named
+   numerator/denominator, an explicit small-sample caveat, and a judge-vs-human
+   agreement split (never one collapsed accuracy number). **Learning is
+   accumulated examples, not model training.** See the admin **Copy A/B** surface
+   (`/admin/copy`) and [`docs/ab-testing-judge.md`](docs/ab-testing-judge.md).
 
 ### Feature flags
 
