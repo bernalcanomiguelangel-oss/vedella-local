@@ -239,7 +239,9 @@ export function buildAiDiagnostics(env: NodeJS.ProcessEnv = process.env): AiDiag
         flagEnabled: config.flags.cycleRecommendation,
       },
     ],
-    keyConfigLocation: "Fitxer .env (ignorat per git) a l'arrel del projecte",
-    keyEnvVar: "AI_API_KEY",
+    keyConfigLocation:
+      "Fitxer .env (ignorat per git) a l'arrel del projecte, o les variables d'entorn de Vercel",
+    // A name (never a value). Either accepted env var makes hasApiKey true.
+    keyEnvVar: "AI_API_KEY o GEMINI_API_KEY",
   };
 }

@@ -75,6 +75,17 @@ export default async function AdminSettingsPage() {
             <code className="font-semibold">{ai.keyEnvVar}</code>). El seu valor
             mai es desa a la base de dades ni s&apos;envia al navegador.
           </p>
+          <p className="mt-2 rounded-lg bg-cream-50 p-3 text-xs text-bark-600">
+            Per fer servir l&apos;IA real <strong>gratuïta</strong> de Google
+            Gemini (model <code className="font-semibold">gemini-1.5-flash</code>
+            ): enganxa la teva clau gratuïta a{" "}
+            <code className="font-semibold">GEMINI_API_KEY</code> dins del{" "}
+            <code className="font-semibold">.env</code> (local) o a les variables
+            d&apos;entorn de Vercel, i posa{" "}
+            <code className="font-semibold">AI_PROVIDER=&quot;gemini&quot;</code>.
+            Sense clau, l&apos;aplicació continua funcionant amb el mode mock. Mai
+            enganxis la clau al xat ni al codi; aquí només es mostra si hi és.
+          </p>
 
           <h3 className="mt-4 font-semibold text-bark-800">
             On viu cada assistent d&apos;IA

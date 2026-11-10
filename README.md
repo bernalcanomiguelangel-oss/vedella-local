@@ -58,7 +58,9 @@ npm run dev
 > zero setup.
 
 The app runs end-to-end with **no API key**. A real AI provider is only used when
-`AI_API_KEY` is set *and* the relevant feature flag is enabled.
+a key (`AI_API_KEY` or `GEMINI_API_KEY`) is set *and* the relevant feature flag is
+enabled. The easiest real option is the **free** Google Gemini `gemini-1.5-flash`
+model (`AI_PROVIDER="gemini"` + `GEMINI_API_KEY`).
 
 > **Migrations are authoritative.** Schema changes ship as committed SQL under
 > `prisma/migrations/` (applied with `migrate deploy` / `migrate reset`), not
@@ -71,13 +73,16 @@ The app runs end-to-end with **no API key**. A real AI provider is only used whe
 
 ### Where a real AI provider key goes
 
-Paste a real key **only** into the git-ignored `.env` as `AI_API_KEY`, set
-`AI_PROVIDER` to the real provider name, and turn on the specific feature flag(s)
-you want (see the table below). The admin **Settings** page and each in-panel
-assistant show this as a **presence-only** indicator (`hasApiKey=true/false` and
-the env-var name `AI_API_KEY`) — the key value is never read into the browser,
-logged, or stored in the database. With `AI_API_KEY` empty, everything falls back
-to the deterministic **MockAiProvider** so the demo runs fully offline with zero
+Paste a real key **only** into the git-ignored `.env` (locally) or the Vercel
+project environment variables — never into the chat or the code. For the free
+Gemini option, put the key in `GEMINI_API_KEY` and set `AI_PROVIDER="gemini"`; for
+an OpenAI-compatible endpoint use `AI_API_KEY` and `AI_PROVIDER="openai"`. Then
+turn on the specific feature flag(s) you want (see the table below). The admin
+**Settings** page and each in-panel assistant show this as a **presence-only**
+indicator (`hasApiKey=true/false` and the accepted env-var names
+`AI_API_KEY or GEMINI_API_KEY`) — the key value is never read into the browser,
+logged, or stored in the database. With both keys empty, everything falls back to
+the deterministic **MockAiProvider** so the demo runs fully offline with zero
 configuration.
 
 ## Authentication & passwords
@@ -291,8 +296,13 @@ The AI layer is **server-side only** and goes through a single provider boundary
 (`AiProvider`). Two implementations exist:
 
 - **MockAiProvider** — deterministic, offline, zero-config. This is the default.
-- A real, OpenAI-compatible provider — imported **lazily** and constructed **only**
-  when `AI_API_KEY` is present *and* the relevant feature flag is on.
+- A real provider — imported **lazily** and constructed **only** when a key is
+  present *and* the relevant feature flag is on. Two real implementations ship:
+  - **Google Gemini** (`AI_PROVIDER="gemini"`) — the **free** `gemini-1.5-flash`
+    model via the Generative Language REST API. Paste a free key into
+    `GEMINI_API_KEY` (or `AI_API_KEY` as a fallback).
+  - **OpenAI-compatible** (`AI_PROVIDER="openai"`) — any OpenAI-style endpoint,
+    using `AI_API_KEY` (+ optional `AI_MODEL` / `AI_BASE_URL`).
 
 Three use cases, each with a safe mock fallback and a Zod-validated, audited output:
 
@@ -313,10 +323,11 @@ Three use cases, each with a safe mock fallback and a Zod-validated, audited out
 
 Per-use-case flags gate the real provider (the mock is always available as a fallback):
 
-| Variable                  | Purpose                                  |
-| ------------------------- | ---------------------------------------- |
-| `AI_PROVIDER`             | `mock` (default) or a real provider name |
-| `AI_API_KEY`              | Real provider key (empty ⇒ mock only)    |
+| Variable                  | Purpose                                             |
+| ------------------------- | --------------------------------------------------- |
+| `AI_PROVIDER`             | `mock` (default), `gemini`, or `openai`             |
+| `GEMINI_API_KEY`          | Free Gemini key (preferred for `gemini`; empty ⇒ mock) |
+| `AI_API_KEY`              | OpenAI key / fallback Gemini key (empty ⇒ mock only) |
 | `AI_TRANSLATION_ENABLED`  | Enable the real translation provider     |
 | `AI_METRICS_ENABLED`      | Enable the real metrics provider         |
 | `AI_RECEIPT_ENABLED`      | Enable the real receipt provider         |

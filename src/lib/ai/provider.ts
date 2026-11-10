@@ -173,8 +173,13 @@ function envFlag(value: string | undefined): boolean {
  * path. Keys are read for real only inside the real provider.
  */
 export function readAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
-  const rawKey = env.AI_API_KEY;
-  const hasApiKey = typeof rawKey === "string" && rawKey.trim().length > 0;
+  // AI_PROVIDER accepts "mock" (default, zero-config offline), "gemini" (free
+  // gemini-1.5-flash), or "openai" (any OpenAI-compatible endpoint).
+  // A key present under EITHER accepted name counts as present. We only ever
+  // expose the boolean — never the value — through this path.
+  const hasAnyKey = (value: string | undefined): boolean =>
+    typeof value === "string" && value.trim().length > 0;
+  const hasApiKey = hasAnyKey(env.AI_API_KEY) || hasAnyKey(env.GEMINI_API_KEY);
   return {
     provider: (env.AI_PROVIDER ?? "mock").trim().toLowerCase(),
     hasApiKey,
@@ -267,8 +272,19 @@ export async function getAiProvider(
 
   if (shouldUseRealProvider(config, useCase)) {
     try {
-      const { createRealProvider } = await import("./openai-provider");
-      const provider = createRealProvider(env);
+      // Branch on the configured provider. The chosen module is imported LAZILY
+      // and ONLY here, so with no key (shouldUseRealProvider false) neither real
+      // provider module is ever loaded. Any construction error (e.g. a missing
+      // key under a different name) falls through to the mock below.
+      let provider: AiProvider;
+      if (config.provider === "gemini") {
+        const { createGeminiProvider } = await import("./gemini-provider");
+        provider = createGeminiProvider(env);
+      } else {
+        // "openai" or any other non-mock value uses the OpenAI-compatible path.
+        const { createRealProvider } = await import("./openai-provider");
+        provider = createRealProvider(env);
+      }
       return { provider, isReal: true, flagEnabled };
     } catch (err) {
       console.error(
