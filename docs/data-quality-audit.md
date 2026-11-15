@@ -57,3 +57,62 @@ a production/Neon snapshot (never a destructive test against production):
 
 These are listed as Phase-2 live-env tasks, not Phase-1 claims. They are reported as
 **Not verified offline**, never as PASS.
+
+## Read-only production scan (Phase 2, condition 4)
+
+`scripts/neon-readonly-scan.ts` (`npm run neon:scan`) turns the Phase-2 live-env tasks above
+into a concrete, **SELECT-only** audit. It reports ONLY aggregate counts and TECHNICAL record
+IDs that need human follow-up. It never writes, never runs DDL, and never exports customer
+names, emails, phones, credentials, or any order-level PII.
+
+### Safety invariants (enforced in the script)
+
+- The connection string is read ONLY from the `NEON_READONLY_URL` environment variable (a
+  Kiro secret). It is **never** printed, logged, committed, or pasted anywhere.
+- With `NEON_READONLY_URL` **unset** the script prints `Not run (no read-only credential)` and
+  exits 0 **without connecting**. (This is the case in the current sandbox.)
+- Every query is SELECT-only; there is no INSERT/UPDATE/DELETE/DDL path. A dedicated read-only
+  Neon role is recommended as defence in depth on top of the SELECT-only queries.
+- Output is limited to counts + technical IDs; PII columns are never selected.
+
+### Status: Not run (no read-only credential)
+
+The production scan was **Not run** in this environment because no `NEON_READONLY_URL` was
+supplied. It is **neither PASS nor FAIL**. Captured output of `npm run neon:scan`:
+
+```
+Not run (no read-only credential)
+  Set NEON_READONLY_URL to a READ-ONLY Neon connection string (a Kiro secret) to run the
+  SELECT-only production scan. The value is read from the environment only and is never
+  printed, logged, or committed.
+  The queries this scan WOULD run are documented in docs/data-quality-audit.md (Read-only
+  production scan).
+```
+
+### The SELECT-only queries (documented for review)
+
+Aggregate **counts** for `Farm`, `Product`, `FarmProductOffer`, `Lot`, `Order`,
+`ReservationCycle`, plus `isTest = true` counts for `Order` / `Lot` / `Farm` (test-data
+contamination in production metrics). Then the following finding queries, each returning only
+technical `id`s:
+
+| Key | What it surfaces | SELECT-only query (shape) |
+| --- | --- | --- |
+| `lot_cross_farm_offer` | Lot.farmId ≠ its offer's farmId (relationship inconsistency) | `SELECT l.id FROM "Lot" l JOIN "FarmProductOffer" o ON o.id=l."farmProductOfferId" WHERE o."farmId"<>l."farmId"` |
+| `lot_cross_farm_product` | Lot.farmId ≠ its product's farmId | `SELECT l.id FROM "Lot" l JOIN "Product" p ON p.id=l."productId" WHERE p."farmId"<>l."farmId"` |
+| `lot_backed_by_nothing` | Lot with neither product nor offer (traceability gap) | `SELECT l.id FROM "Lot" l WHERE l."productId" IS NULL AND l."farmProductOfferId" IS NULL` |
+| `offer_missing_farm` | Offer with dangling farm ownership | `SELECT o.id FROM "FarmProductOffer" o LEFT JOIN "Farm" f ON f.id=o."farmId" WHERE f.id IS NULL` |
+| `product_missing_farm` | Product with dangling farm ownership | `SELECT p.id FROM "Product" p LEFT JOIN "Farm" f ON f.id=p."farmId" WHERE f.id IS NULL` |
+| `duplicate_lot_reference` | Duplicate lot references | `SELECT reference AS id FROM "Lot" GROUP BY reference HAVING COUNT(*)>1` |
+| `invalid_date_sequence` | NOT slaughter ≤ cutting ≤ packing < expiry | `SELECT l.id FROM "Lot" l WHERE NOT (l."slaughterDate"<=l."cuttingDate" AND l."cuttingDate"<=l."packingDate" AND l."packingDate"<l."expiryDate")` |
+| `negative_units` | Lots with negative units | `SELECT l.id FROM "Lot" l WHERE l.units < 0` |
+| `public_offer_not_publishable` | Active offer that is not approved (publication-rule violation) | `SELECT o.id FROM "FarmProductOffer" o WHERE o."isActive"=true AND o."isApproved"=false` |
+| `public_offer_unresolved_content_flag` | Active offer served while a content flag is unresolved | `SELECT o.id FROM "FarmProductOffer" o WHERE o."isActive"=true AND o."contentReviewState" IN ('flagged','needs_evidence')` |
+| `public_farm_not_publishable` | Active farm that is not approved | `SELECT f.id FROM "Farm" f WHERE f."isActive"=true AND f."isApproved"=false` |
+
+To run (with an authorised read-only credential, never committed):
+
+```bash
+export NEON_READONLY_URL="postgresql://READONLY_USER:...@ep-xxxx.REGION.aws.neon.tech/neondb?sslmode=require"
+npm run neon:scan   # prints counts + technical IDs as JSON; no PII, no connection string
+```

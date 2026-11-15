@@ -1,0 +1,4 @@
+{
+  "status": "not-run",
+  "reason": "Not run (needs Docker/Postgres env): no TEST_DATABASE_URL or E2E_DATABASE_URL set, and no reachable PostgreSQL (no Docker daemon, no local Postgres, no Neon credential in this environment). See docs/postgres-e2e-env.md."
+}

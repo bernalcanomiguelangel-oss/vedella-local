@@ -18,7 +18,9 @@
     "test:e2e": "playwright test",
     "db:test:setup": "bash scripts/db-test-setup.sh",
     "db:test:teardown": "bash scripts/db-test-teardown.sh",
-    "seed:e2e:postgres": "tsx scripts/seed-e2e-postgres.ts"
+    "seed:e2e:postgres": "tsx scripts/seed-e2e-postgres.ts",
+    "eval:vedella": "tsx scripts/eval-vedella.ts",
+    "neon:scan": "tsx scripts/neon-readonly-scan.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

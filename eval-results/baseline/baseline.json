@@ -1,0 +1,22 @@
+{
+  "label": "baseline (pre-Phase-2, recorded in FEAT-001)",
+  "source": "FEAT-001 findings (features/FEAT-001.json) — the known-green baseline before the Phase-2 content-guard, persona-isolation and language-invariance suites were added.",
+  "vitest": {
+    "testFiles": 45,
+    "tests": 332,
+    "passed": 332,
+    "failed": 0,
+    "command": "npm test (vitest run)",
+    "note": "reserve.test.ts passed 6/6 inline in the FEAT-001 full run; it is a known parallel-load timing flake (passes in isolation), never a logic failure."
+  },
+  "tsc": "npx tsc --noEmit exited 0 (clean)",
+  "build": "npm run build exited 0 (clean)",
+  "playwright": {
+    "status": "Not run (needs Docker/Postgres env)",
+    "reason": "no Docker daemon, no local Postgres, no Neon credential in the sandbox"
+  },
+  "neon_production_scan": {
+    "status": "Not run (no read-only credential)",
+    "reason": "NEON_READONLY_URL unset; the read-only production scan never connects without it"
+  }
+}
