@@ -13,7 +13,7 @@ Each canonical case maps to its backing OFFLINE Vitest test and the PENDING Play
 | S8-H3 | True inactive state (not draft) preserves approval + history | Rule 3 | `tests/admin/lifecycle.test.ts` (13/13) | PASS | e2e/admin-approve.spec.ts — platform_admin approves a pending product and it becomes visible | Not run (needs Docker/Postgres env) |
 | S8-H4 | Mandatory lot refs + valid date order enforced | Rule 2 | `tests/validateLot.test.ts` (10/10) | PASS | e2e/cycle-full.spec.ts — a reservation is rejected with CYCLE_FULL once the cycle is drained | Not run (needs Docker/Postgres env) |
 | S8-H5 | Customer/farm data never exposed to an unauthorised user (Red Line) | Rule 4 / Red Line | `tests/api/auth-gate.test.ts` (6/6) | PASS | e2e/admin-approve.spec.ts — a customer is denied access to the admin area | Not run (needs Docker/Postgres env) |
-| S8-C13 | Unsupported public medical claim held for human review (Case 13) | Rule 5 | `tests/integration/content-guard.test.ts` (5/5) | PASS | e2e/content-guard.spec.ts — flagged medical-claim offer is held for human review and cannot be published while unresolved | Not run (needs Docker/Postgres env) |
+| S8-C13 | Unsupported public medical claim held for human review (Case 13) | Rule 5 | `tests/integration/content-guard.test.ts` (9/9) | PASS | e2e/content-guard.spec.ts — flagged medical-claim offer is held for human review and cannot be published while unresolved | Not run (needs Docker/Postgres env) |
 | S8-PERSONA | Five-persona access isolation (public/customer/Farm A/Farm B/admin) | Rule 4 / Red Line | `tests/integration/persona-isolation.test.ts` (25/25) | PASS | e2e/persona-isolation.spec.ts — Farm A manager sees only Farm A's records in the admin area | Not run (needs Docker/Postgres env) |
 | S8-LANG | Language invariance: locale/postcode never changes price or access | Red Line | `tests/integration/language-invariance.test.ts` (5/5) | PASS | e2e/language-switch.spec.ts — language switcher updates the UI ca -> es -> en | Not run (needs Docker/Postgres env) |
 
@@ -24,16 +24,16 @@ AI-generated test-case PROPOSALS are tracked separately in `docs/ai-generated-te
 ## Vitest results
 
 - Status: run
-- Test files: 49
-- Total tests: 375
-- Passed: 374
+- Test files: 51
+- Total tests: 393
+- Passed: 392
 - Failed: 1
 - Failing cases: `tests/integration/reserve.test.ts` › reserve(): rejections rejects when there is no active cycle
 - NOTE: the only failure is the documented `reserve.test.ts` parallel-load FLAKE (passes 6/6 in isolation via `npx vitest run tests/integration/reserve.test.ts`). It is a timing flake, not a logic failure or regression.
 
 ### The three ratios (exact definitions)
 
-- **Pass ratio** = passed tests / tests actually run = 374/375 = 99.7%
+- **Pass ratio** = passed tests / tests actually run = 392/393 = 99.7%
 - **Resolved historical failure ratio** = historical failures that pass after retest / historical failures actually retested = 5/5 = 100.0%
 - **Regression rate** = previously passing tests that now fail / previously passing tests rerun = 1/332 = 0.3%
   - The single full-run failure is the documented reserve.test.ts parallel-load FLAKE (passes 6/6 in isolation); it is a timing flake, not a logic regression.
@@ -58,7 +58,7 @@ AI-generated test-case PROPOSALS are tracked separately in `docs/ai-generated-te
 | Secrets never leak (persona isolation Red Line) | `tests/integration/persona-isolation.test.ts` | 25 | 25 | 0 | PASS |
 | Willingness-to-pay: locale/postcode never changes price | `tests/integration/language-invariance.test.ts` | 5 | 5 | 0 | PASS |
 | Cross-farm / unauthorised access denied | `tests/api/auth-gate.test.ts` | 6 | 6 | 0 | PASS |
-| Medical-claim content never auto-published | `tests/integration/content-guard.test.ts` | 5 | 5 | 0 | PASS |
+| Medical-claim content never auto-published | `tests/integration/content-guard.test.ts` | 9 | 9 | 0 | PASS |
 
 ## Failures by workflow step
 
@@ -68,7 +68,7 @@ AI-generated test-case PROPOSALS are tracked separately in `docs/ai-generated-te
 | Step 2 - Validation | 0 |
 | Step 3 - Relationship and traceability | 0 |
 | Step 4 - Save and operational use | 0 |
-| None | 374 |
+| None | 392 |
 | Unknown | 1 |
 
 The judge classifies the FIRST failing step per case (Steps 1-4). The only offline failure is the timing flake, classified `Unknown` (environment/timing), not a logic step.
@@ -96,7 +96,7 @@ Resolved historical failure ratio = 5/5 = 100.0%. After cell for every H-row unt
 
 ## Tested commit
 
-- `a148de1d916c2de74c6c3a8e2f2edb8c5f2cd6f2` (git rev-parse HEAD)
+- `e0c1070b99b38aaca6eb4a1fccb0ea0ce02d2b2f` (git rev-parse HEAD)
 
 ## Environment used
 
@@ -104,4 +104,4 @@ Resolved historical failure ratio = 5/5 = 100.0%. After cell for every H-row unt
 
 ## Test execution date
 
-- 2026-11-15T16:29:15.367Z
+- 2026-11-15T16:53:24.266Z
