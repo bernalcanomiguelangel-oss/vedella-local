@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "vercel-build": "prisma generate && prisma migrate deploy && tsx prisma/seed.ts && next build",
+    "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
+    "db:seed": "tsx prisma/seed.ts",
     "prisma:generate:test": "prisma generate --schema prisma/schema.test.prisma",
     "pretest": "npm run prisma:generate:test",
     "test": "vitest run",

@@ -40,7 +40,8 @@ cp .env.example .env
 npx prisma migrate deploy        # apply migrations to an existing/empty DB
 
 # 4. Seed two fantasy farms, packs, cuts, lots, and one active reservation cycle
-npm run seed
+#    (explicit, local-only command; see the hosting note for the production guard)
+npm run db:seed
 
 # 5. Run the dev server
 npm run dev
@@ -48,14 +49,20 @@ npm run dev
 
 > **Hosting.** To put the app online for free (Vercel + Neon Postgres), follow the
 > step-by-step guide in [`docs/deploy-vercel-neon.md`](docs/deploy-vercel-neon.md).
-> On Vercel the `vercel-build` script runs `prisma migrate deploy` and then the seed
-> (`tsx prisma/seed.ts`) before `next build`, so the first deploy creates the schema
-> AND the demo data (admin `miguel@admin.com` plus the two example farms) with no
-> manual step. The seed is idempotent, so redeploys are safe no-ops that never
-> duplicate or wipe data; a manual re-seed (`npm run seed`) is only needed in the
-> rare case you want to seed a database by hand. The automated test suite needs no
-> Postgres: it runs on a local SQLite test client (`npm test`), fully offline with
-> zero setup.
+> On Vercel the `vercel-build` script runs `prisma generate` and `prisma migrate
+> deploy` before `next build`. **It no longer runs the seed**: the seed is
+> destructive (on a fresh DB it wipes every table before recreating the demo data),
+> so it must never run automatically on a production deploy. Seeding is a separate,
+> explicit command — `npm run db:seed` — that you run by hand only against local,
+> test, a dedicated preview DB, or another authorised environment. The seed has a
+> hard, fail-closed production guard: it refuses to run when `VERCEL_ENV=production`
+> or when the `DATABASE_URL` host looks like a managed Neon host, unless you set the
+> explicit override `ALLOW_PRODUCTION_SEED=yes`. The guard never logs the connection
+> string. The seed also keeps its idempotency guard (it does nothing if the admin or
+> example farm already exists). Whether Vercel preview and production share one
+> database is for you to confirm; the guard is conservative regardless. The automated
+> test suite needs no Postgres: it runs on a local SQLite test client (`npm test`),
+> fully offline with zero setup.
 
 The app runs end-to-end with **no API key**. A real AI provider is only used when
 a key (`AI_API_KEY` or `GEMINI_API_KEY`) is set *and* the relevant feature flag is
