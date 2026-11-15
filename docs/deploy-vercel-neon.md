@@ -252,3 +252,9 @@ Only hand out the admin password if you want someone to manage the platform.
 - **The AI stays in mock mode.** With `AI_PROVIDER=mock` and `AI_API_KEY` unset, every
   AI feature uses the deterministic mock provider. There is nothing to pay for and no
   key to manage.
+- **Running the Playwright e2e suite against a Vercel-realistic Postgres.** The
+  end-to-end flows boot the dev server against PostgreSQL (the production engine), not
+  SQLite. Provide a Neon dev branch via `E2E_DATABASE_URL` (or a local Docker Postgres
+  via `TEST_DATABASE_URL`), then run `npm run db:test:setup && npm run test:e2e`. The
+  Neon path mirrors this `vercel-build` flow (`prisma migrate deploy` -> seed ->
+  `next build`). Full walkthrough: `docs/postgres-e2e-env.md`.

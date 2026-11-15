@@ -15,7 +15,10 @@
     "pretest": "npm run prisma:generate:test",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:test:setup": "bash scripts/db-test-setup.sh",
+    "db:test:teardown": "bash scripts/db-test-teardown.sh",
+    "seed:e2e:postgres": "tsx scripts/seed-e2e-postgres.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
