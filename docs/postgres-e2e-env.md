@@ -100,7 +100,7 @@ evidence the suite is testable on the Vercel path.
 
 ## Current status: Not run (needs Docker/Postgres env)
 
-The ten Playwright specs below were **NOT RUN** in this sandbox. They are
+The sixteen Playwright specs below were **NOT RUN** in this sandbox. They are
 **neither PASS nor FAIL** — they could not execute because no PostgreSQL was
 reachable (no Docker daemon, no local Postgres binaries, and no Neon credential
 supplied). The environment is fully created and wired; a run needs a reachable
@@ -131,7 +131,7 @@ becomes healthy (times out):
 Command timed out
 ```
 
-### The ten specs (8 files) — Not run (needs Docker/Postgres env)
+### The sixteen specs (9 files) — Not run (needs Docker/Postgres env)
 
 | # | File | `test()` title |
 | --- | --- | --- |
@@ -145,6 +145,12 @@ Command timed out
 | 8 | `e2e/language-switch.spec.ts` | language switcher updates the UI ca -> es -> en |
 | 9 | `e2e/receipt-review.spec.ts` | receipt upload pre-fills a form; submitting creates a pending_review record |
 | 10 | `e2e/content-guard.spec.ts` | flagged medical-claim offer is held for human review and cannot be published while unresolved |
+| 11 | `e2e/persona-isolation.spec.ts` | public visitor sees both approved farms but no admin area |
+| 12 | `e2e/persona-isolation.spec.ts` | customer is denied the admin area |
+| 13 | `e2e/persona-isolation.spec.ts` | Farm A manager sees only Farm A's records in the admin area |
+| 14 | `e2e/persona-isolation.spec.ts` | Farm B manager sees only Farm B's records in the admin area |
+| 15 | `e2e/persona-isolation.spec.ts` | a Farm A manager cannot reach Farm B's admin orders by scope |
+| 16 | `e2e/persona-isolation.spec.ts` | platform admin sees BOTH farms across the admin area |
 
 To run them, provide a Postgres (local Docker or a Neon dev branch) per Usage A
 or B above and re-run `npm run db:test:setup && npm run test:e2e`.
