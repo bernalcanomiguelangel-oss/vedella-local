@@ -21,6 +21,8 @@ import {
   type MediaTarget,
   applyOfferSelfEdit,
   applyOfferCreate,
+  applyContentReviewDecision,
+  type ContentReviewDecision,
   applyProfileSubmitReview,
   applyProfileDirectEdit,
   applyProfileApprove,
@@ -106,6 +108,40 @@ export async function offerCreateAction(input: {
       entityId: res.offerId ?? "",
       toState: "pending_review",
       detail: `new offer "${input.publicName}" for farm ${input.farmId}`,
+    });
+    revalidateAll();
+  }
+  return res;
+}
+
+/**
+ * platform_admin-only resolution of a content-flagged offer (FEAT-003,
+ * condition 2). The reviewer may reject, request changes, or approve corrected
+ * (evidence-based) wording. The decision, reviewer, reason and timestamp are
+ * written to AdminAudit. AI never appears as the approver; this is a human
+ * entry point and the guard that flagged the offer is deterministic code.
+ */
+export async function contentReviewDecisionAction(
+  offerId: string,
+  decision: ContentReviewDecision,
+  reason: string,
+): Promise<ActionResult> {
+  const user = await requirePlatformAdmin();
+  const res = await applyContentReviewDecision(
+    prisma,
+    actorOf(user),
+    offerId,
+    decision,
+    reason,
+  );
+  if (res.ok) {
+    await recordAdminAudit({
+      actor: user,
+      action: "content_review_decision",
+      entityType: "offer",
+      entityId: offerId,
+      toState: res.contentReviewState ?? "",
+      detail: `decision=${decision} reason="${(reason ?? "").trim()}"`,
     });
     revalidateAll();
   }

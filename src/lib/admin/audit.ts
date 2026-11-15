@@ -55,7 +55,9 @@ export type AdminAction =
   | "copy_variant_decide"
   | "copy_judge_rule_create"
   | "copy_experiment_start"
-  | "copy_experiment_decide";
+  | "copy_experiment_decide"
+  // FEAT-003 content-guard human review decision (condition 2).
+  | "content_review_decision";
 
 export interface AdminAuditInput {
   actor: SessionUser;

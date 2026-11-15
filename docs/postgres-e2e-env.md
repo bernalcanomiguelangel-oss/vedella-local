@@ -100,7 +100,7 @@ evidence the suite is testable on the Vercel path.
 
 ## Current status: Not run (needs Docker/Postgres env)
 
-The nine Playwright specs below were **NOT RUN** in this sandbox. They are
+The ten Playwright specs below were **NOT RUN** in this sandbox. They are
 **neither PASS nor FAIL** — they could not execute because no PostgreSQL was
 reachable (no Docker daemon, no local Postgres binaries, and no Neon credential
 supplied). The environment is fully created and wired; a run needs a reachable
@@ -131,7 +131,7 @@ becomes healthy (times out):
 Command timed out
 ```
 
-### The nine specs (7 files) — Not run (needs Docker/Postgres env)
+### The ten specs (8 files) — Not run (needs Docker/Postgres env)
 
 | # | File | `test()` title |
 | --- | --- | --- |
@@ -144,6 +144,7 @@ Command timed out
 | 7 | `e2e/forced-password-change.spec.ts` | a temporary password forces the change-password flow before admin access |
 | 8 | `e2e/language-switch.spec.ts` | language switcher updates the UI ca -> es -> en |
 | 9 | `e2e/receipt-review.spec.ts` | receipt upload pre-fills a form; submitting creates a pending_review record |
+| 10 | `e2e/content-guard.spec.ts` | flagged medical-claim offer is held for human review and cannot be published while unresolved |
 
 To run them, provide a Postgres (local Docker or a Neon dev branch) per Usage A
 or B above and re-run `npm run db:test:setup && npm run test:e2e`.

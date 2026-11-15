@@ -11,6 +11,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { planTransition, LifecycleError } from "./lifecycle";
 import { validateLot, LotValidationError } from "@/lib/validateLot";
+import { isContentReviewUnresolved } from "@/lib/content-guard";
 
 export interface CoreResult {
   ok: boolean;
@@ -30,7 +31,11 @@ export async function applyLifecycleTransition(
   // approval path (M8) actually transitions the offer that the public read path
   // renders. "farm" resolves to a Farm.
   let current:
-    | { lifecycle: string; kind: "farm" | "product" | "offer" }
+    | {
+        lifecycle: string;
+        kind: "farm" | "product" | "offer";
+        contentReviewState?: string | null;
+      }
     | null = null;
   if (entityType === "farm") {
     const farm = await db.farm.findUnique({ where: { id: entityId } });
@@ -43,7 +48,13 @@ export async function applyLifecycleTransition(
       const offer = await db.farmProductOffer.findUnique({
         where: { id: entityId },
       });
-      current = offer ? { lifecycle: offer.lifecycle, kind: "offer" } : null;
+      current = offer
+        ? {
+            lifecycle: offer.lifecycle,
+            kind: "offer",
+            contentReviewState: offer.contentReviewState,
+          }
+        : null;
     }
   }
   if (!current) return { ok: false, code: "NOT_FOUND", message: "Record not found." };
@@ -56,6 +67,24 @@ export async function applyLifecycleTransition(
       return { ok: false, code: err.code, message: err.message };
     }
     throw err;
+  }
+
+  // Condition 2 content-guard gate: an offer whose description carries an
+  // unresolved medical/nutrition flag can NEVER become approved or active. The
+  // guard is deterministic code; a platform_admin must resolve the flag (via
+  // applyContentReviewDecision -> 'approve_corrected') before this transition is
+  // allowed. Non-approving transitions (e.g. -> draft, -> archived) are fine.
+  if (
+    current.kind === "offer" &&
+    isContentReviewUnresolved(current.contentReviewState) &&
+    (flags.isApproved || flags.isActive)
+  ) {
+    return {
+      ok: false,
+      code: "CONTENT_REVIEW_REQUIRED",
+      message:
+        "This offer has an unresolved content-review flag and cannot be approved or activated until a platform_admin resolves it.",
+    };
   }
 
   const data = {
