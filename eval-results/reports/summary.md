@@ -26,15 +26,17 @@ AI-generated test-case PROPOSALS are tracked separately in `docs/ai-generated-te
 - Status: run
 - Test files: 49
 - Total tests: 375
-- Passed: 375
-- Failed: 0
+- Passed: 374
+- Failed: 1
+- Failing cases: `tests/integration/reserve.test.ts` › reserve(): rejections rejects when there is no active cycle
+- NOTE: the only failure is the documented `reserve.test.ts` parallel-load FLAKE (passes 6/6 in isolation via `npx vitest run tests/integration/reserve.test.ts`). It is a timing flake, not a logic failure or regression.
 
 ### The three ratios (exact definitions)
 
-- **Pass ratio** = passed tests / tests actually run = 375/375 = 100.0%
+- **Pass ratio** = passed tests / tests actually run = 374/375 = 99.7%
 - **Resolved historical failure ratio** = historical failures that pass after retest / historical failures actually retested = 5/5 = 100.0%
-- **Regression rate** = previously passing tests that now fail / previously passing tests rerun = 0/332 = 0.0%
-  - No previously-passing test now fails: zero regressions in this run.
+- **Regression rate** = previously passing tests that now fail / previously passing tests rerun = 1/332 = 0.3%
+  - The single full-run failure is the documented reserve.test.ts parallel-load FLAKE (passes 6/6 in isolation); it is a timing flake, not a logic regression.
 
 ## Playwright results
 
@@ -66,8 +68,8 @@ AI-generated test-case PROPOSALS are tracked separately in `docs/ai-generated-te
 | Step 2 - Validation | 0 |
 | Step 3 - Relationship and traceability | 0 |
 | Step 4 - Save and operational use | 0 |
-| None | 375 |
-| Unknown | 0 |
+| None | 374 |
+| Unknown | 1 |
 
 The judge classifies the FIRST failing step per case (Steps 1-4). The only offline failure is the timing flake, classified `Unknown` (environment/timing), not a logic step.
 
@@ -88,13 +90,13 @@ Resolved historical failure ratio = 5/5 = 100.0%. After cell for every H-row unt
 ## Regressions introduced
 
 - Previously passing tests rerun: 332 (baseline from FEAT-001).
-- Previously passing tests that now fail: 0.
-- Regression rate = 0/332 = 0.0%.
-- No previously-passing test now fails: zero regressions in this run.
+- Previously passing tests that now fail: 1.
+- Regression rate = 1/332 = 0.3%.
+- The single full-run failure is the documented reserve.test.ts parallel-load FLAKE (passes 6/6 in isolation); it is a timing flake, not a logic regression.
 
 ## Tested commit
 
-- `afed836bf0a7202bca59486d88ad291efed7c107` (git rev-parse HEAD)
+- `a148de1d916c2de74c6c3a8e2f2edb8c5f2cd6f2` (git rev-parse HEAD)
 
 ## Environment used
 
@@ -102,4 +104,4 @@ Resolved historical failure ratio = 5/5 = 100.0%. After cell for every H-row unt
 
 ## Test execution date
 
-- 2026-11-15T16:23:27.251Z
+- 2026-11-15T16:29:15.367Z

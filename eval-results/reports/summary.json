@@ -1,15 +1,20 @@
 {
-  "testedCommit": "afed836bf0a7202bca59486d88ad291efed7c107",
+  "testedCommit": "a148de1d916c2de74c6c3a8e2f2edb8c5f2cd6f2",
   "environmentUsed": "Offline Node v22.23.4 sandbox: Vitest ran against the per-file SQLite test client. No Docker daemon, no local Postgres, no Neon credential => Playwright e2e and the read-only Neon scan were Not run.",
-  "testExecutionDate": "2026-11-15T16:23:27.251Z",
+  "testExecutionDate": "2026-11-15T16:29:15.367Z",
   "vitest": {
     "status": "run",
     "testFiles": 49,
     "total": 375,
-    "passed": 375,
-    "failed": 0,
-    "onlyKnownFlake": false,
-    "failingCases": []
+    "passed": 374,
+    "failed": 1,
+    "onlyKnownFlake": true,
+    "failingCases": [
+      {
+        "file": "tests/integration/reserve.test.ts",
+        "name": "reserve(): rejections rejects when there is no active cycle"
+      }
+    ]
   },
   "playwright": {
     "status": "not-run",
@@ -17,8 +22,8 @@
   },
   "ratios": {
     "passRatio": {
-      "value": 1,
-      "numerator": 375,
+      "value": 0.9973333333333333,
+      "numerator": 374,
       "denominator": 375,
       "definition": "passed tests / tests actually run (Vitest executed only)"
     },
@@ -29,11 +34,11 @@
       "definition": "historical failures that pass after retest / historical failures actually retested (offline)"
     },
     "regressionRate": {
-      "value": 0,
-      "numerator": 0,
+      "value": 0.0030120481927710845,
+      "numerator": 1,
       "denominator": 332,
       "definition": "previously passing tests that now fail / previously passing tests rerun",
-      "note": "No previously-passing test now fails: zero regressions in this run."
+      "note": "The single full-run failure is the documented reserve.test.ts parallel-load FLAKE (passes 6/6 in isolation); it is a timing flake, not a logic regression."
     }
   },
   "canonicalCases": [
@@ -256,8 +261,8 @@
     "Step 2 - Validation": 0,
     "Step 3 - Relationship and traceability": 0,
     "Step 4 - Save and operational use": 0,
-    "None": 375,
-    "Unknown": 0
+    "None": 374,
+    "Unknown": 1
   },
   "notRun": {
     "playwright": "Not run (needs Docker/Postgres env): no TEST_DATABASE_URL or E2E_DATABASE_URL set, and no reachable PostgreSQL (no Docker daemon, no local Postgres, no Neon credential in this environment). See docs/postgres-e2e-env.md.",
