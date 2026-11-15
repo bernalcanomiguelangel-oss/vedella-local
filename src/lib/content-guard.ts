@@ -32,6 +32,11 @@
  *     prohibited claim past the guard.
  */
 
+import {
+  type ContentReviewState,
+  isUnresolvedForPublication,
+} from "./content-review";
+
 export type ContentClass = "prohibited" | "needs_evidence" | "ordinary";
 
 export interface ContentClassification {
@@ -126,16 +131,26 @@ export function classifyContent(text: string): ContentClassification {
 }
 
 /**
- * Map a classification to the persisted contentReviewState value, or null when
- * no review is required. 'prohibited' -> 'flagged'; 'needs_evidence' ->
- * 'needs_evidence'; 'ordinary' -> null (clear).
+ * Map a guard classification to the persisted contentReviewState workflow
+ * value. BOTH detection kinds collapse to the single workflow state
+ * `needs_review` (the detection REASON stays in contentFlagReason, so detection
+ * is separated from workflow state). Ordinary text maps to `clear` — meaning
+ * "evaluated, nothing found" (NOT null, which means "never evaluated").
+ *
+ *   'prohibited'     -> 'needs_review'
+ *   'needs_evidence' -> 'needs_review'
+ *   'ordinary'       -> 'clear'
+ *
+ * This NEVER returns `approved` / `rejected`: those are set only by the
+ * authorised human review action (applyContentReviewDecision).
  */
 export function contentReviewStateFor(
   result: ContentClassification,
-): "flagged" | "needs_evidence" | null {
-  if (result.kind === "prohibited") return "flagged";
-  if (result.kind === "needs_evidence") return "needs_evidence";
-  return null;
+): ContentReviewState {
+  if (result.kind === "prohibited" || result.kind === "needs_evidence") {
+    return "needs_review";
+  }
+  return "clear";
 }
 
 /**
@@ -148,10 +163,12 @@ export function requiresContentReview(result: ContentClassification): boolean {
 
 /**
  * Content-review states that BLOCK approval/activation until a platform_admin
- * resolves them. 'resolved' and null/'clear' do not block.
+ * resolves them. Re-exported from the single source of truth
+ * (src/lib/content-review.ts): `needs_review` and `rejected` block; `clear`,
+ * `approved` and NULL do not.
  */
 export function isContentReviewUnresolved(
   state: string | null | undefined,
 ): boolean {
-  return state === "flagged" || state === "needs_evidence";
+  return isUnresolvedForPublication(state);
 }

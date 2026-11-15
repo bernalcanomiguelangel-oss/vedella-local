@@ -11,7 +11,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { planTransition, LifecycleError } from "./lifecycle";
 import { validateLot, LotValidationError } from "@/lib/validateLot";
-import { isContentReviewUnresolved } from "@/lib/content-guard";
+import { isUnresolvedForPublication } from "@/lib/content-review";
 
 export interface CoreResult {
   ok: boolean;
@@ -71,12 +71,14 @@ export async function applyLifecycleTransition(
 
   // Condition 2 content-guard gate: an offer whose description carries an
   // unresolved medical/nutrition flag can NEVER become approved or active. The
-  // guard is deterministic code; a platform_admin must resolve the flag (via
-  // applyContentReviewDecision -> 'approve_corrected') before this transition is
-  // allowed. Non-approving transitions (e.g. -> draft, -> archived) are fine.
+  // guard is deterministic code; a platform_admin must resolve the review (via
+  // applyContentReviewDecision -> contentReviewState='approved') before this
+  // transition is allowed. `needs_review` and `rejected` stay blocked; `clear`,
+  // `approved` and NULL (legacy) do not block. Non-approving transitions (e.g.
+  // -> draft, -> archived) are fine regardless.
   if (
     current.kind === "offer" &&
-    isContentReviewUnresolved(current.contentReviewState) &&
+    isUnresolvedForPublication(current.contentReviewState) &&
     (flags.isApproved || flags.isActive)
   ) {
     return {

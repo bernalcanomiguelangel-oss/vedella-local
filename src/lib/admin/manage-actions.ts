@@ -135,12 +135,16 @@ export async function contentReviewDecisionAction(
     reason,
   );
   if (res.ok) {
+    // Human review evidence: reviewer (actor), decision + reason (detail),
+    // reviewed timestamp (AdminAudit.createdAt), previous state (fromState) and
+    // resulting state (toState). No new production columns are needed.
     await recordAdminAudit({
       actor: user,
       action: "content_review_decision",
       entityType: "offer",
       entityId: offerId,
-      toState: res.contentReviewState ?? "",
+      fromState: res.previousState ?? "",
+      toState: res.resultingState ?? res.contentReviewState ?? "",
       detail: `decision=${decision} reason="${(reason ?? "").trim()}"`,
     });
     revalidateAll();

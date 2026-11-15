@@ -7,20 +7,41 @@ and the evaluation harness. It complements the per-feature docs under `docs/`.
 ## 1. Content guard + human-review seam
 
 - `src/lib/content-guard.ts` is a **deterministic** classifier (no AI). `classifyContent(text)`
-  returns one of three buckets: `prohibited` (unsupported treatment/prevention medical claims),
-  `needs_evidence` (nutrition claims), or `ordinary`. It tolerates accents and variant spelling
-  and is case-insensitive; `prohibited` wins when both appear.
+  returns one of three **detection** buckets: `prohibited` (unsupported treatment/prevention
+  medical claims), `needs_evidence` (nutrition claims), or `ordinary`. It tolerates accents and
+  variant spelling and is case-insensitive; `prohibited` wins when both appear.
+- **Workflow state** (separate from detection) is the single source of truth in
+  `src/lib/content-review.ts`: `CONTENT_REVIEW_STATES = ["clear","needs_review","approved",
+  "rejected"] as const`, with the derived `ContentReviewState` union, a Zod enum
+  (`contentReviewStateSchema`), the publication helper `isUnresolvedForPublication(state)`
+  (true for `needs_review` and `rejected`; false for `clear`, `approved`, and `null`), and the
+  transition validator `canTransitionContentReview(from, to)`. Detection maps to workflow as:
+  `prohibited`/`needs_evidence` -> `needs_review`; `ordinary` -> `clear`. The detection REASON is
+  preserved in `contentFlagReason`.
 - Persistence: two additive, nullable columns on `FarmProductOffer` —
-  `contentReviewState` (`null`/`clear` | `flagged` | `needs_evidence` | `resolved`) and
-  `contentFlagReason` (a short, PII-free reason).
-- Gate: a flagged offer still **saves** as a draft but is forced into `pending_review` and
-  **cannot** be approved/activated/published while unresolved. The lifecycle applier
-  (`src/lib/admin/core.ts` + `src/lib/admin/lifecycle.ts`) refuses the transition with
-  `CONTENT_REVIEW_REQUIRED`. Only a `platform_admin` can resolve a flag
-  (`applyContentReviewDecision`); a `farm_manager` cannot. The publication decision stays
-  **human-only**.
-- Exercised by `tests/content-guard.test.ts` (pure) and `tests/integration/content-guard.test.ts`
-  (condition 2 a/b/c/d), plus the pending `e2e/content-guard.spec.ts`.
+  `contentReviewState` (`null` = legacy/unevaluated | `clear` | `needs_review` | `approved` |
+  `rejected`) and `contentFlagReason` (a short, PII-free reason). Because the columns stay
+  nullable TEXT, the value set is enforced in **application code + Zod + tests only** — NO extra
+  Postgres enum/CHECK migration is added; the existing additive two-column migration is unchanged.
+- Gate: a `needs_review` or `rejected` offer still **saves** as a draft but **cannot** be
+  approved/activated/published while unresolved. The lifecycle applier (`src/lib/admin/core.ts`
+  + `src/lib/admin/lifecycle.ts`) refuses the transition with `CONTENT_REVIEW_REQUIRED`. `null`
+  (legacy) preserves a record's existing publication status. Only a `platform_admin` may move
+  `needs_review` -> `approved`/`rejected` (`applyContentReviewDecision`); a `farm_manager`
+  cannot, and the AI layer never writes `approved`/`rejected`. The offer create/edit path may
+  only set `clear`/`needs_review` and never trusts a client-submitted state. Approval status
+  (isApproved/isActive) stays SEPARATE from `contentReviewState`: an operationally-approved offer
+  with `contentReviewState` in {needs_review, rejected} is still NOT publication-eligible.
+- Transition matrix: `null -> clear`; `null -> needs_review`; `clear -> needs_review` (material
+  edit); `needs_review -> approved` (platform_admin); `needs_review -> rejected` (platform_admin);
+  `rejected -> needs_review` (edit + resubmit); `approved -> needs_review` (material edit of
+  approved content re-runs the guard).
+- Human review evidence (reviewer id, decision, reason, reviewed timestamp, previous + resulting
+  state) is stored in the existing `AdminAudit` model (`content_review_decision` action, with
+  `fromState`/`toState` carrying previous/resulting state) — no new production columns.
+- Exercised by `tests/content-guard.test.ts` + `tests/content-review.test.ts` (pure) and
+  `tests/integration/content-guard.test.ts` (the 10 workflow cases), plus the pending
+  `e2e/content-guard.spec.ts`.
 
 ## 2. AI-advice-only boundary
 

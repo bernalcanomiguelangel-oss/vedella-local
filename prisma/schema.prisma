@@ -285,7 +285,8 @@ model FarmProductOffer {
   // claim needing evidence, the draft still SAVES but the offer is forced into
   // human review and CANNOT become approved/active/public until a platform_admin
   // resolves it. Nullable + default null so existing rows are unaffected.
-  //   contentReviewState: null/'clear' | 'flagged' | 'needs_evidence' | 'resolved'
+  //   contentReviewState: null (legacy/unevaluated) | 'clear' | 'needs_review'
+  //                       | 'approved' | 'rejected'  (src/lib/content-review.ts)
   contentReviewState String?
   contentFlagReason  String?
 

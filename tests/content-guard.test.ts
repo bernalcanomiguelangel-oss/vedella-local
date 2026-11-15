@@ -19,22 +19,24 @@ describe("classifyContent — three buckets", () => {
     expect(r.kind).toBe("prohibited");
     expect(r.matches.length).toBeGreaterThan(0);
     expect(r.reason).not.toBe("");
-    expect(contentReviewStateFor(r)).toBe("flagged");
+    // Both detection kinds collapse to the single workflow state needs_review.
+    expect(contentReviewStateFor(r)).toBe("needs_review");
     expect(requiresContentReview(r)).toBe(true);
   });
 
   it("marks a nutrition claim as NEEDS_EVIDENCE", () => {
     const r = classifyContent("Source of iron.");
     expect(r.kind).toBe("needs_evidence");
-    expect(contentReviewStateFor(r)).toBe("needs_evidence");
+    expect(contentReviewStateFor(r)).toBe("needs_review");
     expect(requiresContentReview(r)).toBe(true);
   });
 
-  it("treats ordinary descriptive text as ORDINARY (no flag)", () => {
+  it("treats ordinary descriptive text as ORDINARY -> clear", () => {
     const r = classifyContent("Vacuum-packed entrecote, 280-320 g per steak.");
     expect(r.kind).toBe("ordinary");
     expect(r.matches).toEqual([]);
-    expect(contentReviewStateFor(r)).toBeNull();
+    // 'clear' means "evaluated, nothing found" — distinct from null.
+    expect(contentReviewStateFor(r)).toBe("clear");
     expect(requiresContentReview(r)).toBe(false);
   });
 });
@@ -67,12 +69,12 @@ describe("classifyContent — accent and spelling tolerance", () => {
 });
 
 describe("isContentReviewUnresolved", () => {
-  it("blocks on flagged/needs_evidence and clears on resolved/null", () => {
-    expect(isContentReviewUnresolved("flagged")).toBe(true);
-    expect(isContentReviewUnresolved("needs_evidence")).toBe(true);
-    expect(isContentReviewUnresolved("resolved")).toBe(false);
+  it("blocks on needs_review/rejected and clears on clear/approved/null", () => {
+    expect(isContentReviewUnresolved("needs_review")).toBe(true);
+    expect(isContentReviewUnresolved("rejected")).toBe(true);
+    expect(isContentReviewUnresolved("approved")).toBe(false);
+    expect(isContentReviewUnresolved("clear")).toBe(false);
     expect(isContentReviewUnresolved(null)).toBe(false);
     expect(isContentReviewUnresolved(undefined)).toBe(false);
-    expect(isContentReviewUnresolved("clear")).toBe(false);
   });
 });

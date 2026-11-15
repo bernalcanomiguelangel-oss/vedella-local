@@ -26,8 +26,13 @@ import {
   classifyContent,
   contentReviewStateFor,
   requiresContentReview,
-  isContentReviewUnresolved,
 } from "@/lib/content-guard";
+import {
+  type ContentReviewState,
+  type StoredContentReviewState,
+  isUnresolvedForPublication,
+  canTransitionContentReview,
+} from "@/lib/content-review";
 
 export type Role = "platform_admin" | "farm_manager" | "customer";
 
@@ -147,12 +152,14 @@ export async function applyOfferSelfEdit(
         },
       });
     } else {
-      // Ordinary text: persist it and clear any prior content flag.
+      // Ordinary text: persist it and record that the guard evaluated the text
+      // and found nothing (contentReviewState='clear', not null — null means
+      // "never evaluated"). Any prior flag reason is cleared.
       await db.farmProductOffer.update({
         where: { id: offerId },
         data: {
           description: input.description,
-          contentReviewState: null,
+          contentReviewState: reviewState,
           contentFlagReason: null,
         },
       });
@@ -266,17 +273,23 @@ export type ContentReviewDecision =
 
 /**
  * A platform_admin resolves a content-flagged offer (condition 2). This is the
- * HUMAN decision; AI never approves. Only a platform_admin may call it.
+ * HUMAN decision; AI never approves, and only a platform_admin may call it. It
+ * is the ONLY code path allowed to write the `approved` / `rejected` workflow
+ * states (the offer create/edit path may only write `clear` / `needs_review`).
  *
  *  - 'approve_corrected' : the description was reworded to evidence-based copy,
- *    so clear the gate (contentReviewState='resolved'). This only UNBLOCKS a
- *    later, separate human lifecycle approval; it does NOT itself publish.
- *  - 'reject' / 'request_changes' : keep the offer out of public. The record
- *    stays flagged/needs_evidence (unresolved) so it cannot be approved/active,
- *    and the reason is recorded. 'reject' additionally demotes to draft.
+ *    so move contentReviewState `needs_review` -> `approved`. This only UNBLOCKS
+ *    a later, separate human lifecycle approval; it does NOT itself publish.
+ *  - 'reject' : move `needs_review` -> `rejected` and demote the offer to draft.
+ *    The offer stays blocked from publication until the text is edited and
+ *    resubmitted (a material edit re-runs the guard -> `needs_review`).
+ *  - 'request_changes' : keep the offer in `needs_review` (still unresolved) so
+ *    it cannot be approved/active; the reason is recorded.
  *
- * The caller's server action records the reviewer, decision, reason and
- * timestamp in AdminAudit.
+ * The transition is validated against the shared transition matrix. The
+ * returned previousState / resultingState are persisted by the caller's server
+ * action into the AdminAudit row (reviewer, decision, reason, timestamp,
+ * previous + resulting state) — no new production columns are needed.
  */
 export async function applyContentReviewDecision(
   db: PrismaClient,
@@ -284,13 +297,24 @@ export async function applyContentReviewDecision(
   offerId: string,
   decision: ContentReviewDecision,
   reason: string,
-): Promise<ManageResult & { offerId?: string; contentReviewState?: string | null }> {
+): Promise<
+  ManageResult & {
+    offerId?: string;
+    contentReviewState?: StoredContentReviewState;
+    previousState?: StoredContentReviewState;
+    resultingState?: StoredContentReviewState;
+  }
+> {
+  // AUTHORISATION: only a platform_admin may approve/reject content. A
+  // farm_manager (or any other role) is FORBIDDEN here.
   if (actor.role !== "platform_admin") return FORBIDDEN;
 
   const offer = await db.farmProductOffer.findUnique({ where: { id: offerId } });
   if (!offer) return NOT_FOUND;
 
-  if (!isContentReviewUnresolved(offer.contentReviewState)) {
+  const previousState = offer.contentReviewState as StoredContentReviewState;
+
+  if (!isUnresolvedForPublication(previousState)) {
     return {
       ok: false,
       code: "NOT_FLAGGED",
@@ -307,28 +331,61 @@ export async function applyContentReviewDecision(
     };
   }
 
+  // Map the human decision to the resulting workflow state.
+  const resultingState: ContentReviewState =
+    decision === "approve_corrected"
+      ? "approved"
+      : decision === "reject"
+        ? "rejected"
+        : "needs_review"; // request_changes keeps it unresolved
+
+  // Validate the workflow transition against the shared matrix (defence in
+  // depth; the decisions above only ever target legal targets from
+  // needs_review).
+  if (!canTransitionContentReview(previousState, resultingState)) {
+    return {
+      ok: false,
+      code: "BAD_TRANSITION",
+      message: `Cannot move content review from ${previousState} to ${resultingState}.`,
+    };
+  }
+
   if (decision === "approve_corrected") {
     await db.farmProductOffer.update({
       where: { id: offerId },
       data: {
-        contentReviewState: "resolved",
+        contentReviewState: resultingState,
         contentFlagReason: trimmedReason || offer.contentFlagReason,
       },
     });
-    return { ok: true, offerId, contentReviewState: "resolved" };
+    return {
+      ok: true,
+      offerId,
+      contentReviewState: resultingState,
+      previousState,
+      resultingState,
+    };
   }
 
-  // reject / request_changes: stay out of public; keep the flag unresolved.
+  // reject / request_changes: stay out of public. 'reject' moves the state to
+  // `rejected` and demotes to draft; 'request_changes' keeps `needs_review`.
   await db.farmProductOffer.update({
     where: { id: offerId },
     data: {
       lifecycle: decision === "reject" ? "draft" : offer.lifecycle,
       isApproved: false,
       isActive: false,
+      contentReviewState: resultingState,
       contentFlagReason: trimmedReason,
     },
   });
-  return { ok: true, offerId, contentReviewState: offer.contentReviewState };
+  return {
+    ok: true,
+    offerId,
+    contentReviewState: resultingState,
+    previousState,
+    resultingState,
+  };
 }
 
 // ---------------------------------------------------------------------------
