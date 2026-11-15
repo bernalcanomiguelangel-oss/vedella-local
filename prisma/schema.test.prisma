@@ -283,6 +283,16 @@ model FarmProductOffer {
   archivedAt DateTime?
   isTest     Boolean   @default(false)
 
+  // FEAT-003 (condition 2): deterministic medical-claim content guard. When a
+  // description contains a possible treatment/prevention claim or a nutrition
+  // claim needing evidence, the draft still SAVES but the offer is forced into
+  // human review and CANNOT become approved/active/public until a platform_admin
+  // resolves it. Nullable + default null so existing rows are unaffected.
+  //   contentReviewState: null (legacy/unevaluated) | 'clear' | 'needs_review'
+  //                       | 'approved' | 'rejected'  (src/lib/content-review.ts)
+  contentReviewState String?
+  contentFlagReason  String?
+
   lots Lot[]
   packItems PackItemV2[]
   orderItems OrderItem[]

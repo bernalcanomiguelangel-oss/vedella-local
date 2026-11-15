@@ -142,26 +142,30 @@ the Vercel variable.
 
 1. Click **Deploy** (or push a commit, which triggers a deploy automatically).
 2. During the build, Vercel runs the project's `vercel-build` script, which does
-   four things in order:
+   three things in order:
    - `prisma generate` builds the database client.
    - `prisma migrate deploy` applies the committed Postgres migrations to your Neon
      database, so all tables and constraints are created automatically on the first
      deploy.
-   - `tsx prisma/seed.ts` runs the seed, which creates the admin and the two example
-     farms automatically on the first deploy (see Step 5 for exactly what it creates).
    - `next build` builds the web app.
+
+   **The build no longer runs the seed.** This is deliberate: the seed is
+   destructive (on a fresh database it wipes every table before recreating the demo
+   data), so running it on every production deploy is unsafe. Seeding is now a
+   separate, explicit command you run by hand (see Step 5).
 3. Wait for the deploy to finish. Vercel then gives you a public URL that looks like
    `https://vedella-local-xxxx.vercel.app`.
 
-At this point the database structure AND the example data both exist. You can go
-straight to Step 6 and log in.
+At this point the database **structure** exists (tables + constraints), but it has
+**no example data yet**. Run the seed once (Step 5) to create the admin and the two
+example farms, then log in (Step 6).
 
 ---
 
-## Step 5. The seed runs automatically on the first deploy
+## Step 5. Seed the example data once (explicit, manual step)
 
-You do NOT need to run the seed by hand. The `vercel-build` script runs it for you
-on every deploy, so the first deploy already creates:
+The seed is **not** part of the Vercel build. You run it yourself, once, against the
+database you want populated. It creates:
 
 - the admin account `miguel@admin.com` (with the temporary password you set in
   `SEED_ADMIN_TEMP_PASSWORD`, forced to change on first login),
@@ -169,29 +173,70 @@ on every deploy, so the first deploy already creates:
   packs, cuts, and lots,
 - the active reservation cycle `Cicle novembre 2026`.
 
-### Redeploys are safe
+The seed command is:
 
-The seed is **idempotent**: if `miguel@admin.com` or the farm `mas-vallgorguina`
-already exists, it does nothing and simply logs that the data is already there. So
-every later deploy is a no-op for the data: it will NOT duplicate anything and will
-NOT wipe anything. This is why it is safe to keep the seed in the build and let it
-run on every deploy.
+```bash
+npm run db:seed
+```
 
-### Manual re-seed (only if you ever need it)
+### Where the seed may run
 
-You normally never need this. If you ever want to run the seed by hand, for example
-against a Neon dev branch from your own computer, you can:
+Run the seed **only** against:
+
+- local development,
+- the isolated PostgreSQL test environment,
+- a dedicated preview database,
+- a manually authorised environment.
+
+It must **not** run automatically against the Neon production database.
+
+### The built-in production guard
+
+The seed has a hard environment guard that runs **before** it touches any table. It
+**refuses to run** when it detects a production target — specifically when
+`VERCEL_ENV` is `production`, or when the `DATABASE_URL` host looks like a managed
+Neon host. The guard is **fail-closed**: if it cannot prove the target is
+non-production, it refuses. It never prints the connection string; it logs only a
+safe message such as:
+
+```
+Refusing to seed: production environment detected; set ALLOW_PRODUCTION_SEED=yes to override.
+```
+
+To seed a production-like database **on purpose** (for example, to populate the demo
+data the very first time), set the explicit, dedicated override:
+
+```bash
+ALLOW_PRODUCTION_SEED=yes npm run db:seed
+```
+
+Only set `ALLOW_PRODUCTION_SEED=yes` when you have confirmed you are targeting the
+right database and you intend to run the destructive seed there.
+
+> **Open question — do Vercel preview and production share one database?** This cannot
+> be answered from the repository; it depends on how you configured the Neon
+> connection strings per Vercel environment. **You must confirm this yourself.** If
+> preview and production can point at the same database, a careless preview seed could
+> wipe production data. The guard above is intentionally conservative regardless: it
+> treats any managed/Neon-looking host as possibly-production and refuses without the
+> explicit override.
+
+### Seeding the first time against Neon
+
+To populate the demo data on your Neon database the first time, from your own computer:
 
 1. Install a recent Node.js (version 22 or newer).
 2. Get the project code (download the ZIP from GitHub, or `git clone` it) and run
    `npm install`.
-3. Run the seed with the SAME two Neon strings you put in Vercel. On macOS or Linux:
+3. Run the seed with the SAME two Neon strings you put in Vercel, plus the explicit
+   override (because the Neon host trips the production guard). On macOS or Linux:
 
    ```bash
    DATABASE_URL="your-pooled-neon-string" \
    DIRECT_URL="your-direct-neon-string" \
    SEED_ADMIN_TEMP_PASSWORD="Canvi2026!" \
-   npm run seed
+   ALLOW_PRODUCTION_SEED=yes \
+   npm run db:seed
    ```
 
    On Windows PowerShell:
@@ -200,11 +245,13 @@ against a Neon dev branch from your own computer, you can:
    $env:DATABASE_URL="your-pooled-neon-string"
    $env:DIRECT_URL="your-direct-neon-string"
    $env:SEED_ADMIN_TEMP_PASSWORD="Canvi2026!"
-   npm run seed
+   $env:ALLOW_PRODUCTION_SEED="yes"
+   npm run db:seed
    ```
 
-   Thanks to the idempotency guard above, running it again against a database that
-   already has the demo data simply does nothing.
+The seed also keeps an **idempotency guard**: if `miguel@admin.com` or the farm
+`mas-vallgorguina` already exists, it does nothing and logs that the data is already
+there, without deleting or duplicating anything.
 
 ---
 
@@ -252,3 +299,11 @@ Only hand out the admin password if you want someone to manage the platform.
 - **The AI stays in mock mode.** With `AI_PROVIDER=mock` and `AI_API_KEY` unset, every
   AI feature uses the deterministic mock provider. There is nothing to pay for and no
   key to manage.
+- **Running the Playwright e2e suite against a Vercel-realistic Postgres.** The
+  end-to-end flows boot the dev server against PostgreSQL (the production engine), not
+  SQLite. Provide a Neon dev branch via `E2E_DATABASE_URL` (or a local Docker Postgres
+  via `TEST_DATABASE_URL`), then run `npm run db:test:setup && npm run test:e2e`. The
+  Neon path applies migrations (`prisma migrate deploy`) and then seeds the dev branch
+  explicitly with `npm run db:seed` (a Neon host needs `ALLOW_PRODUCTION_SEED=yes` to
+  pass the guard) before `next build`. The seed is no longer part of `vercel-build`.
+  Full walkthrough: `docs/postgres-e2e-env.md`.

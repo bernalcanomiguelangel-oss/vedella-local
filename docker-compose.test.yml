@@ -1,0 +1,29 @@
+# Vedella Local — LOCAL/CI e2e PostgreSQL ONLY. Not for production.
+#
+# This compose file brings up a disposable Postgres 16 instance for the
+# Playwright e2e suite so the dev server boots against a Vercel/Neon-realistic
+# Postgres (provider=postgresql, the same engine production uses) instead of the
+# offline SQLite path. It is wired by `npm run db:test:setup` / `db:test:teardown`.
+#
+# SECURITY: the credentials below are NON-SECRET, throwaway values for a
+# local-only test database (published on a non-default port, never exposed to a
+# network). NEVER point this at, or copy a real credential into, production.
+services:
+  postgres-test:
+    image: postgres:16
+    container_name: vedella-postgres-test
+    # Non-default host port (5433) so this never clobbers a local Postgres on 5432.
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: vedella
+      POSTGRES_PASSWORD: vedella
+      POSTGRES_DB: vedella_test
+    # tmpfs keeps the test DB in memory: fast and auto-discarded on teardown.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vedella -d vedella_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

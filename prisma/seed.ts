@@ -18,6 +18,7 @@ import {
   verifyOrderTotalsUnchanged,
 } from "../src/lib/migrate/backfill-orders";
 import { ensureDefaultSettings } from "../src/lib/admin/settings";
+import { evaluateSeedGuard } from "./seed-guard";
 
 const prisma = new PrismaClient();
 
@@ -229,6 +230,22 @@ function lotDates(baseDaysAgo: number) {
 }
 
 async function main() {
+  // HARD PRODUCTION GUARD (runs BEFORE any deleteMany / write). The seed is
+  // destructive (it wipes every table on a fresh DB), so it must never run
+  // against production unless an explicit, dedicated override is supplied. This
+  // is fail-closed and never logs the connection string. See prisma/seed-guard.ts.
+  const guard = evaluateSeedGuard({
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    DATABASE_URL: process.env.DATABASE_URL,
+    ALLOW_PRODUCTION_SEED: process.env.ALLOW_PRODUCTION_SEED,
+  });
+  if (!guard.allow) {
+    console.error(`[seed] ${guard.message}`);
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+  console.log(`[seed] ${guard.message}`);
+
   console.log("Seeding Vedella Local...");
 
   // IDEMPOTENCY GUARD (safe for repeated deploys). The seed below wipes every

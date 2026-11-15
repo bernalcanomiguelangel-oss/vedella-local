@@ -10,10 +10,21 @@
 import { execSync } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../src/lib/password";
+import { seedE2ePostgres } from "../scripts/seed-e2e-postgres";
 import {
   E2E_ADMIN_EMAIL,
   E2E_ADMIN_PASSWORD,
 } from "./helpers";
+
+/**
+ * FEAT-002: when a Postgres e2e URL is provided (local Docker TEST_DATABASE_URL
+ * or a Neon dev-branch E2E_DATABASE_URL, Vercel-realistic), point the Prisma
+ * clients used by this setup at it and seed the synthetic Postgres fixtures.
+ * When UNSET, fall back to the current behaviour (`npm run seed` against the
+ * ambient DATABASE_URL). This keeps the local-SQLite dev flow untouched.
+ */
+const e2eDbUrl =
+  process.env.TEST_DATABASE_URL?.trim() || process.env.E2E_DATABASE_URL?.trim();
 
 /**
  * Create a dedicated e2e platform admin whose password is already set
@@ -87,8 +98,23 @@ async function seedMachineTranslation() {
 }
 
 export default async function globalSetup() {
-  // Deterministic seed (idempotent: the seed wipes + repopulates).
-  execSync("npm run seed", { stdio: "inherit" });
+  if (e2eDbUrl) {
+    // Vercel/Neon-realistic Postgres path: seed the synthetic e2e fixtures
+    // directly (self-resetting wipe-then-insert) against the test URL. The
+    // Prisma clients below read DATABASE_URL/DIRECT_URL, so set them here too so
+    // seedE2eAdmin/seedMachineTranslation target the same database.
+    process.env.DATABASE_URL = e2eDbUrl;
+    process.env.DIRECT_URL = e2eDbUrl;
+    const prisma = new PrismaClient();
+    try {
+      await seedE2ePostgres(prisma);
+    } finally {
+      await prisma.$disconnect();
+    }
+  } else {
+    // Local fallback: deterministic seed (idempotent: the seed wipes + repopulates).
+    execSync("npm run seed", { stdio: "inherit" });
+  }
   await seedE2eAdmin();
   await seedMachineTranslation();
 }
