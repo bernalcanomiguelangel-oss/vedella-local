@@ -25,7 +25,14 @@
  * logged.
  */
 import type { ImageKind } from "@/lib/media";
-import { writeImageFile, deleteImageFile, UPLOADS_PUBLIC_PREFIX } from "@/lib/media";
+import {
+  writeImageFile,
+  deleteImageFile,
+  UPLOADS_PUBLIC_PREFIX,
+  MediaStorageUnavailableError,
+} from "@/lib/media";
+
+export { MediaStorageUnavailableError } from "@/lib/media";
 
 /** Public host suffix for Vercel Blob URLs (e.g. <id>.public.blob.vercel-storage.com). */
 export const VERCEL_BLOB_HOST_SUFFIX = ".blob.vercel-storage.com";
@@ -50,6 +57,13 @@ export class LocalFilesystemStorage implements MediaStorage {
   readonly kind = "local" as const;
 
   async put(storedFilename: string, buf: Buffer): Promise<string> {
+    // On a serverless/read-only filesystem (Vercel) with no Blob configured the
+    // local write CANNOT succeed. Refuse up-front with a typed, catchable error
+    // rather than letting fs.mkdir throw a raw ENOENT deeper in. Local dev/tests
+    // (where isServerlessReadOnlyFs() is false) fall through to the real write.
+    if (isServerlessReadOnlyFs()) {
+      throw new MediaStorageUnavailableError();
+    }
     return writeImageFile(storedFilename, buf);
   }
 
@@ -116,7 +130,35 @@ export class VercelBlobStorage implements MediaStorage {
 /** Env shape we read; kept minimal so it is easy to pass a fake in tests. */
 export interface MediaStorageEnv {
   BLOB_READ_WRITE_TOKEN?: string | undefined;
+  /** Set to "1" by Vercel in every runtime (read-only/ephemeral FS signal). */
+  VERCEL?: string | undefined;
+  /** "production" | "preview" | "development" on Vercel; unset elsewhere. */
+  VERCEL_ENV?: string | undefined;
   [key: string]: string | undefined;
+}
+
+/**
+ * True when we are running on a serverless host whose application filesystem is
+ * read-only/ephemeral (Vercel), so a local write under public/uploads cannot
+ * succeed. We rely on Vercel's own env signals (set by the platform, not by us):
+ *  - VERCEL === "1" is present in every Vercel runtime.
+ *  - VERCEL_ENV ("production" | "preview" | "development") is also set there.
+ * Reads ONLY from the provided env (process.env by default); never logs it.
+ */
+export function isServerlessReadOnlyFs(env: MediaStorageEnv = process.env): boolean {
+  return env.VERCEL === "1" || (typeof env.VERCEL_ENV === "string" && env.VERCEL_ENV.length > 0);
+}
+
+/**
+ * True when image storage is effectively NOT CONFIGURED: we are on a serverless
+ * read-only filesystem AND no Blob token is set, so neither backend can persist
+ * an upload. Callers use this to return a clear "storage not configured" result
+ * and to avoid ever attempting a doomed local mkdir/write.
+ */
+export function isMediaStorageUnconfigured(
+  env: MediaStorageEnv = process.env,
+): boolean {
+  return isServerlessReadOnlyFs(env) && mediaStorageKind(env) === "local";
 }
 
 /** 'blob' when a non-empty BLOB_READ_WRITE_TOKEN is present, else 'local'. */

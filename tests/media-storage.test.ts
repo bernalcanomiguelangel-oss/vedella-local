@@ -4,8 +4,11 @@ import path from "node:path";
 import {
   selectMediaStorage,
   mediaStorageKind,
+  isServerlessReadOnlyFs,
+  isMediaStorageUnconfigured,
   LocalFilesystemStorage,
   VercelBlobStorage,
+  MediaStorageUnavailableError,
 } from "@/lib/media-storage";
 import { validateImageUpload, uploadsDir } from "@/lib/media";
 
@@ -53,6 +56,56 @@ describe("selectMediaStorage / mediaStorageKind", () => {
     expect(mediaStorageKind(env)).toBe("blob");
     expect(selectMediaStorage(env).kind).toBe("blob");
     expect(selectMediaStorage(env) instanceof VercelBlobStorage).toBe(true);
+  });
+});
+
+describe("isServerlessReadOnlyFs / isMediaStorageUnconfigured", () => {
+  it("is false in a plain (local/offline) env", () => {
+    expect(isServerlessReadOnlyFs({})).toBe(false);
+    expect(isMediaStorageUnconfigured({})).toBe(false);
+  });
+
+  it("detects a Vercel runtime from VERCEL or VERCEL_ENV", () => {
+    expect(isServerlessReadOnlyFs({ VERCEL: "1" })).toBe(true);
+    expect(isServerlessReadOnlyFs({ VERCEL_ENV: "production" })).toBe(true);
+    expect(isServerlessReadOnlyFs({ VERCEL: "", VERCEL_ENV: "" })).toBe(false);
+  });
+
+  it("reports storage UNCONFIGURED only when serverless AND no Blob token", () => {
+    // Serverless + no token -> unconfigured (the production crash scenario).
+    expect(isMediaStorageUnconfigured({ VERCEL: "1" })).toBe(true);
+    // Serverless + token -> configured (Blob is used).
+    expect(
+      isMediaStorageUnconfigured({ VERCEL: "1", BLOB_READ_WRITE_TOKEN: "t" }),
+    ).toBe(false);
+    // Not serverless -> local filesystem is fine, never "unconfigured".
+    expect(isMediaStorageUnconfigured({})).toBe(false);
+  });
+});
+
+describe("LocalFilesystemStorage on a serverless read-only FS", () => {
+  afterEach(() => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+  });
+
+  it("refuses the write with a typed, catchable error and NEVER mkdirs", async () => {
+    const v = validateImageUpload(PNG_HEADER, "photo.png");
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+
+    // Simulate the Vercel runtime. The local write must not even attempt a
+    // mkdir: it throws a typed MediaStorageUnavailableError the action catches.
+    process.env.VERCEL = "1";
+    const mkdirSpy = vi.spyOn(fs, "mkdir");
+
+    const storage = new LocalFilesystemStorage();
+    await expect(
+      storage.put(v.storedFilename, PNG_HEADER, v.kind),
+    ).rejects.toBeInstanceOf(MediaStorageUnavailableError);
+
+    expect(mkdirSpy).not.toHaveBeenCalled();
+    mkdirSpy.mockRestore();
   });
 });
 

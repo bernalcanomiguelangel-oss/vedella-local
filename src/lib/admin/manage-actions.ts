@@ -43,7 +43,11 @@ import {
   applyCycleRemoveFarm,
 } from "./manage";
 import { MEDIA_REQUIRES_APPROVAL, validateImageUpload } from "@/lib/media";
-import { selectMediaStorage } from "@/lib/media-storage";
+import {
+  selectMediaStorage,
+  isMediaStorageUnconfigured,
+  MediaStorageUnavailableError,
+} from "@/lib/media-storage";
 
 export interface ActionResult {
   ok: boolean;
@@ -364,6 +368,21 @@ export async function mediaUploadAction(args: {
   const requiresApproval =
     actor.role === "platform_admin" ? false : MEDIA_REQUIRES_APPROVAL;
 
+  // When running on a serverless/read-only filesystem (Vercel) with NO Blob
+  // token, neither backend can persist an upload: the local write is impossible
+  // and no Blob store is configured. Surface a CLEAR, handled result instead of
+  // attempting a doomed local mkdir (which previously threw a raw ENOENT and
+  // crashed the page). The message is friendly and bilingual; it leaks no
+  // internals (no path, no token).
+  if (isMediaStorageUnconfigured()) {
+    return {
+      ok: false,
+      code: "STORAGE_NOT_CONFIGURED",
+      message:
+        "L'emmagatzematge d'imatges no està configurat. / Image storage is not configured.",
+    };
+  }
+
   // Pick the storage backend from the environment (Vercel Blob when
   // BLOB_READ_WRITE_TOKEN is set, else the local filesystem). The returned ref
   // is stored verbatim; it may be a "/uploads/..." path OR a blob https URL.
@@ -385,12 +404,23 @@ export async function mediaUploadAction(args: {
       storedPath: storedRef,
       requiresApproval,
     });
-  } catch {
+  } catch (err) {
     // Best-effort cleanup of whatever we managed to store, then a friendly,
     // handled error. We deliberately do NOT include the thrown error text (it
     // may reference a token/path) and never rethrow.
     if (storedRef) {
       await storage.remove(storedRef).catch(() => {});
+    }
+    // A MediaStorageUnavailableError means the local write hit a read-only FS
+    // (serverless) that we did not catch via the pre-check above; map it to the
+    // same clear "not configured" result rather than the generic retry message.
+    if (err instanceof MediaStorageUnavailableError) {
+      return {
+        ok: false,
+        code: "STORAGE_NOT_CONFIGURED",
+        message:
+          "L'emmagatzematge d'imatges no està configurat. / Image storage is not configured.",
+      };
     }
     return {
       ok: false,

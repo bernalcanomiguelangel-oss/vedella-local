@@ -79,6 +79,8 @@ afterEach(() => {
   currentActor = null;
   vi.clearAllMocks();
   delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.VERCEL;
+  delete process.env.VERCEL_ENV;
 });
 
 describe("mediaUploadAction fails gracefully on storage error", () => {
@@ -125,5 +127,57 @@ describe("mediaUploadAction fails gracefully on storage error", () => {
     const fresh = await db.farmProductOffer.findUnique({ where: { id: offer.id } });
     expect(fresh?.imageRef ?? null).toBeNull();
     expect(fresh?.pendingImageRef ?? null).toBeNull();
+  });
+
+  it("returns { ok:false, code:'STORAGE_NOT_CONFIGURED' } on serverless with no Blob token, WITHOUT throwing or touching the FS", async () => {
+    const farm = await makeFarm(db);
+    const def = await makeDefinition(db);
+    const offer = await makeOffer(db, farm.id, def.id);
+
+    currentActor = {
+      id: "admin-1",
+      email: "admin@example.com",
+      name: "Admin",
+      role: "platform_admin",
+      farmId: null,
+      mustChangePassword: false,
+    };
+
+    // Simulate the production crash scenario: Vercel runtime, NO Blob token.
+    process.env.VERCEL = "1";
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+
+    // Spy on fs.mkdir to PROVE no local mkdir is attempted at all (the old bug
+    // called fs.mkdir("/var/task/public/uploads") and crashed with ENOENT).
+    const { promises: realFs } = await import("node:fs");
+    const mkdirSpy = vi.spyOn(realFs, "mkdir");
+
+    const { mediaUploadAction } = await import("@/lib/admin/manage-actions");
+
+    let res: Awaited<ReturnType<typeof mediaUploadAction>> | undefined;
+    await expect(
+      (async () => {
+        res = await mediaUploadAction({
+          target: "offer_image",
+          targetId: offer.id,
+          fileBase64: PNG_BASE64,
+          originalName: "photo.png",
+        });
+      })(),
+    ).resolves.toBeUndefined();
+
+    expect(res).toBeDefined();
+    expect(res!.ok).toBe(false);
+    expect(res!.code).toBe("STORAGE_NOT_CONFIGURED");
+    expect(res!.message).toContain("Image storage is not configured");
+    // No local write was ever attempted.
+    expect(mkdirSpy).not.toHaveBeenCalled();
+
+    // The DB offer must NOT have been assigned any image ref.
+    const fresh = await db.farmProductOffer.findUnique({ where: { id: offer.id } });
+    expect(fresh?.imageRef ?? null).toBeNull();
+    expect(fresh?.pendingImageRef ?? null).toBeNull();
+
+    mkdirSpy.mockRestore();
   });
 });
