@@ -45,6 +45,23 @@ export const MEDIA_REQUIRES_APPROVAL = true;
 /** Maximum accepted upload size in bytes (5 MB). */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Typed, CATCHABLE error for "the image store cannot accept a write here".
+ *
+ * WHY: on Vercel the serverless filesystem is read-only/ephemeral, so
+ * fs.mkdir("/var/task/public/uploads") throws a raw ENOENT/EROFS. If that raw
+ * error escapes into a render path it crashes the page with a white
+ * "Application error" screen. We convert it into THIS typed error so every
+ * caller can recognise a storage-unavailable condition and surface a friendly,
+ * handled message instead. It deliberately carries NO path/token detail.
+ */
+export class MediaStorageUnavailableError extends Error {
+  constructor(message = "Media storage is not available in this environment.") {
+    super(message);
+    this.name = "MediaStorageUnavailableError";
+  }
+}
+
 /** Allowed image kinds. These are the ONLY types ever accepted. */
 export type ImageKind = "jpeg" | "png" | "webp";
 
@@ -218,7 +235,20 @@ export async function writeImageFile(
   buf: Buffer,
 ): Promise<string> {
   const dir = uploadsDir();
-  await fs.mkdir(dir, { recursive: true });
+  // On a read-only/ephemeral serverless filesystem (e.g. Vercel) this mkdir
+  // throws a raw ENOENT/EROFS (the parent `public` dir is not writable). Convert
+  // it into a typed, catchable MediaStorageUnavailableError so it can NEVER
+  // escape as an unhandled exception that crashes a page. Local dev/tests, where
+  // `public/uploads` is writable, are unaffected and continue to work as before.
+  try {
+    await fs.mkdir(dir, { recursive: true });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code === "ENOENT" || code === "EROFS" || code === "EACCES" || code === "EPERM") {
+      throw new MediaStorageUnavailableError();
+    }
+    throw err;
+  }
   const target = path.join(dir, storedFilename);
   const resolved = path.resolve(target);
   if (resolved !== target || path.dirname(resolved) !== path.resolve(dir)) {

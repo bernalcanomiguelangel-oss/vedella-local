@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -7,6 +7,7 @@ import {
   deleteImageFile,
   uploadsDir,
   validateImageUpload,
+  MediaStorageUnavailableError,
 } from "@/lib/media";
 
 /**
@@ -59,5 +60,23 @@ describe("writeImageFile / deleteImageFile", () => {
     await expect(
       deleteImageFile("../../../etc/passwd"),
     ).resolves.toBeUndefined();
+  });
+
+  it("converts a read-only-FS mkdir failure into MediaStorageUnavailableError", async () => {
+    // Simulate Vercel's read-only serverless FS: mkdir rejects with EROFS. The
+    // raw error must NOT escape; it is mapped to the typed, catchable error so a
+    // render/action path can surface a friendly message instead of crashing.
+    const err = Object.assign(new Error("read-only file system"), { code: "EROFS" });
+    const mkdirSpy = vi.spyOn(fs, "mkdir").mockRejectedValueOnce(err);
+    const writeSpy = vi.spyOn(fs, "writeFile");
+
+    await expect(
+      writeImageFile("deadbeef.png", PNG_HEADER),
+    ).rejects.toBeInstanceOf(MediaStorageUnavailableError);
+
+    // The write was never attempted after the dir could not be created.
+    expect(writeSpy).not.toHaveBeenCalled();
+    mkdirSpy.mockRestore();
+    writeSpy.mockRestore();
   });
 });
